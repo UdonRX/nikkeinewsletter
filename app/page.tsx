@@ -1,0 +1,1 @@
+export default function Home(){return <main className="wrap"><h1>日経ニュースメール</h1><div className="card"><p>Gmailに届いた日経ニュースメールを読み込む。</p><a className="btn" href="/api/auth/google">Googleで接続</a></div></main>}
