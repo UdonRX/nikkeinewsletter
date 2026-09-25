@@ -4,11 +4,16 @@ import { parseNikkeiEmail } from "@/lib/parser";
 import { refreshAccessToken } from "@/lib/google";
 import { getRefreshToken, setAccessToken } from "@/lib/session";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 async function token(req: NextRequest) {
   const current = req.cookies.get("nn_access_token")?.value;
   if (current) return current;
+
   const refresh = await getRefreshToken();
   if (!refresh) return null;
+
   const fresh = await refreshAccessToken(refresh);
   if (fresh) await setAccessToken(fresh);
   return fresh;
@@ -16,7 +21,13 @@ async function token(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   const accessToken = await token(req);
-  if (!accessToken) return NextResponse.json({ error: "not_connected" }, { status: 401 });
+
+  if (!accessToken) {
+    return NextResponse.json(
+      { error: "not_connected", message: "Googleアカウントを接続してください。" },
+      { status: 401, headers: { "Cache-Control": "no-store" } }
+    );
+  }
 
   try {
     const ids = await listNikkeiMessages(accessToken);
@@ -27,7 +38,7 @@ export async function GET(req: NextRequest) {
       const from = header(full, "From");
       const sender = from.toLowerCase();
       const kind = sender.includes("sokuho-news@mx.nikkei.com") ? "速報" : "定期便";
-      const { html, text } = extractMimeBody(full.payload);
+      const { html, text } = await extractMimeBody(accessToken, m.id!, full.payload);
       const news = parseNikkeiEmail(html, text);
 
       emails.push({
@@ -44,17 +55,16 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    emails.sort((a, b) => {
-      const at = Number(a.internalDate || 0);
-      const bt = Number(b.internalDate || 0);
-      return bt - at;
-    });
+    emails.sort((a, b) => Number(b.internalDate || 0) - Number(a.internalDate || 0));
 
-    return NextResponse.json({ emails });
+    return NextResponse.json({ emails }, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (e) {
+    console.error("[api/emails]", e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "gmail_error" },
-      { status: 502 }
+      { status: 502, headers: { "Cache-Control": "no-store" } }
     );
   }
 }
