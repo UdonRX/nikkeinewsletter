@@ -22,3 +22,28 @@ body{min-height:100vh}button,a{-webkit-tap-highlight-color:transparent}button{fo
 .safari-reader{max-width:720px;margin:0 auto;padding:30px 22px 80px}.reader-hero{width:100%;max-height:420px;object-fit:cover;border-radius:10px;margin-bottom:24px}.safari-reader h1{font-family:Georgia,"Hiragino Mincho ProN","Yu Mincho",serif;font-size:32px;line-height:1.42;letter-spacing:-.025em;margin:0 0 28px;color:#17181a}.article-content{font-family:Georgia,"Hiragino Mincho ProN","Yu Mincho",serif;color:#26282b;line-height:2;letter-spacing:.01em}.article-content p{margin:0 0 1.35em}.article-content h2,.article-content h3{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;line-height:1.5;margin:2em 0 .8em}.article-content img{max-width:100%;height:auto;border-radius:8px;margin:1em 0}.reader-loading,.reader-unavailable{color:#858b93;line-height:1.9;padding:25px 0}.loading{text-align:center;padding:80px 20px;color:#777d86}
 @media(max-width:759px){.home-shell{padding-left:10px;padding-right:10px}.home-header{padding-left:7px}.home-header h1{font-size:25px}.home-hero{min-height:66svh;border-radius:25px}.home-hero-title{font-size:25px}.shorts-shell{padding-left:10px;padding-right:10px}.short-image{height:61svh;min-height:300px}.short-title{font-size:21px}}
 @media(min-width:760px){.home-shell{padding-left:24px;padding-right:24px}.home-hero{min-height:680px}.short-card{width:500px}.short-image{height:560px}}
+
+/* Low-glare dark theme */
+:root{color-scheme:dark;--bg:#080a0d;--surface:#11151a;--text:#f4f6f8;--muted:#8c949e;--line:#242a31;--red:#ff5963}
+html,body{background:#080a0d;color:#f4f6f8}
+.home-shell{background:#080a0d}
+.home-hero{background:#0c0f13;box-shadow:0 8px 30px rgba(0,0,0,.35)}
+.home-hero-image{background:#11151a}
+.issue-icon{color:#89919b}
+.issue-icon:not(:disabled):active{background:#171c22}
+.issue-count{color:#66707b}
+.shorts-shell{background:#080a0d}
+.shorts-progress{background:#252b32}
+.shorts-progress span{background:#f4f6f8}
+.short-card{background:#11151a;border-color:#242a31;box-shadow:0 8px 30px rgba(0,0,0,.38)}
+.short-image{background:#151a20}
+.short-image .image-placeholder{color:#66707b}
+.short-title{background:#11151a;color:#f4f6f8}
+.connect-card{background:#11151a;border-color:#242a31}
+.btn{background:#f4f6f8;color:#080a0d}
+.reader-overlay{background:#080a0d}
+.safari-reader-bar{border-bottom-color:#242a31;background:rgba(8,10,13,.94)}
+.reader-back,.reader-controls button{color:#f4f6f8}
+.safari-reader h1{color:#f4f6f8}
+.article-content{color:#d8dde3}
+.reader-loading,.reader-unavailable,.loading{color:#8c949e}
