@@ -107,9 +107,17 @@ function getTimeSlots(now = new Date()): Array<{ kind: "朝刊" | "昼刊" | "�
 }
 
 function pickIssue(emails: Email[], kind: "朝刊" | "昼刊" | "夕刊", targetDate: string) {
-  return emails
-    .filter((email) => email.kind === kind && dateKey(email.internalDate || email.receivedAt) === targetDate)
-    .sort((a, b) => Number(b.internalDate || 0) - Number(a.internalDate || 0))[0];
+  const candidates = emails
+    .filter((email) => email.kind === kind && email.news.length > 0)
+    .sort((a, b) => Number(b.internalDate || 0) - Number(a.internalDate || 0));
+
+  // まず指定日の刊を探す。見つからない場合は、その日以前で一番新しい同じ刊を使う。
+  // Gmail側の配信遅延や休日などで「今日の刊」がまだ存在しない場合でも、
+  // ホームの刊ボタンが0件にならないようにする。
+  return (
+    candidates.find((email) => dateKey(email.internalDate || email.receivedAt) === targetDate) ||
+    candidates.find((email) => dateKey(email.internalDate || email.receivedAt) < targetDate)
+  );
 }
 
 function latestRegular(emails: Email[]) {
