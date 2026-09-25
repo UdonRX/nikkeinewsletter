@@ -74,11 +74,9 @@ export default function Home(){
       <header className="safari-reader-bar"><button type="button" className="reader-back" onClick={()=>setReader(null)}>‹ <span>一覧</span></button><div className="reader-controls"><button type="button" onClick={()=>setFontScale(v=>Math.max(.9,v-.1))}>A−</button><span>NEWS READER</span><button type="button" onClick={()=>setFontScale(v=>Math.min(1.3,v+.1))}>A＋</button></div></header>
       <div className="reader-nav"><button type="button" onClick={()=>moveReader(-1)} disabled={reader.newsIndex===0}>‹ 前の記事</button><span>{reader.newsIndex+1} / {emails[reader.emailIndex]?.news.length||0}</span><button type="button" onClick={()=>moveReader(1)} disabled={reader.newsIndex===(emails[reader.emailIndex]?.news.length||1)-1}>次の記事 ›</button></div>
       <article className="safari-reader">
-        <div className="reader-source">{emails[reader.emailIndex]?.kind} · {formatDate(emails[reader.emailIndex]?.receivedAt||"")}</div>
         {reader.data?.imageUrl&&<img className="reader-hero" src={reader.data.imageUrl} alt=""/>}
         <h1>{reader.data?.title||emails[reader.emailIndex]?.news[reader.newsIndex]?.title}</h1>
         {readerLoading?<div className="reader-loading">記事を読み込んでいます…</div>:reader.data?.contentHtml?<div className="article-content" style={{fontSize:fontScale+"em"}} dangerouslySetInnerHTML={{__html:reader.data.contentHtml}}/>:<div className="reader-unavailable"><p>このニュースのメール本文を表示しています。</p><p>{emails[reader.emailIndex]?.news[reader.newsIndex]?.body||"本文を取得できませんでした。"}</p></div>}
-        {emails[reader.emailIndex]?.news[reader.newsIndex]?.url&&<a className="original-link" href={emails[reader.emailIndex].news[reader.newsIndex].url} target="_blank" rel="noreferrer">日経電子版で読む ↗</a>}
       </article>
     </div>}
   </main>;
