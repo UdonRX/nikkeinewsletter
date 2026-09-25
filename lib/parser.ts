@@ -150,7 +150,9 @@ export function parseNikkeiEmail(html: string, textFallback: string): ParsedNews
       )
     );
 
-    const key = href + "|" + title;
+    const normalizedTitle = title.replace(/[「」『』【】（）()［］\[\]・:：、,.，．!！?？\s]/g, "").toLowerCase();
+    const normalizedUrl = href.split("#")[0].replace(/[?&](utm_[^=&]+|trk|tracking)=[^&]*/gi, "");
+    const key = normalizedUrl + "|" + normalizedTitle;
     if (seen.has(key)) continue;
 
     seen.add(key);
