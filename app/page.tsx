@@ -117,18 +117,12 @@ export default function Home() {
   const [fontScale, setFontScale] = useState(1);
   const [shortIndex, setShortIndex] = useState(0);
   const [savedMode, setSavedMode] = useState(false);
-  const [now, setNow] = useState(() => new Date());
   const [swipeX, setSwipeX] = useState(0);
   const [isSwipeAnimating, setIsSwipeAnimating] = useState(false);
   const [swipeAction, setSwipeAction] = useState<"save" | "remove" | null>(null);
   const touchStartXRef = useRef(0);
   const touchStartYRef = useRef(0);
   const touchActiveRef = useRef(false);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     try {
@@ -428,8 +422,13 @@ export default function Home() {
           <div
             className={"short-card " + (isSwipeAnimating ? "is-swiping-away" : "")}
             style={{
-              transform: `translate3d(${isSwipeAnimating ? (swipeX >= 0 ? 120 : -120) : swipeX}px,0,0) rotate(${(isSwipeAnimating ? (swipeX >= 0 ? 120 : -120) : swipeX) * 0.035}deg)`,
-              transition: isSwipeAnimating ? "transform .23s cubic-bezier(.22,.7,.2,1)" : "none",
+              transform: isSwipeAnimating
+                ? `translate3d(${swipeX >= 0 ? "calc(100vw + 120px)" : "calc(-100vw - 120px)"},0,0) rotate(${swipeX >= 0 ? 10 : -10}deg)`
+                : `translate3d(${swipeX}px,0,0) rotate(${swipeX * 0.035}deg)`,
+              opacity: isSwipeAnimating ? 0 : Math.max(0.55, 1 - Math.abs(swipeX) / 420),
+              transition: isSwipeAnimating
+                ? "transform .23s cubic-bezier(.22,.7,.2,1), opacity .23s ease"
+                : "none",
             }}
           >
             <div className="short-image">
