@@ -76,6 +76,9 @@ function editionLabel(internalDate: string | undefined, dateHeader: string, cont
   return editionInfo(internalDate, dateHeader, content).kind;
 }
 
+// Keep Gmail's nullable internalDate out of the edition parser's public type.
+
+
 export async function GET(req: NextRequest) {
   const accessToken = await token(req);
 
