@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 type News={title:string;body:string;url?:string;index:number;section?:string;imageUrl?:string;imageAlt?:string};
-type Email={id:string;subject:string;receivedAt:string;internalDate:string;kind:"定期便"|"速報";from:string;newsCount:number;news:News[]};
+type Email={id:string;subject:string;receivedAt:string;internalDate:string;kind:"朝刊"|"昼刊"|"夕刊"|"速報";from:string;newsCount:number;news:News[]};
 type ReaderData={title:string;imageUrl:string;contentHtml:string;url:string;available:boolean;source?:string;fetchError?:string};
 
 export default function Home(){
@@ -60,7 +60,7 @@ export default function Home(){
         <div className="bento-viewport"><div className="bento-track">
           {email.news.map((news,newsIndex)=>
             <button type="button" className={"bento-news bento-"+(newsIndex%5)} key={news.url||news.title+newsIndex} onClick={()=>openReader(emailIndex,newsIndex)}>
-              <div className="bento-image">{news.imageUrl?<img src={news.imageUrl} alt={news.imageAlt||""} loading="lazy"/>:<div className="image-placeholder"><span>N</span></div>}</div>
+              <div className="bento-image"><img src={"/api/news-image?url="+encodeURIComponent(news.url||"")} alt={news.imageAlt||""} loading="lazy" onError={(e)=>{e.currentTarget.style.display="none";const p=e.currentTarget.nextElementSibling as HTMLElement|null;if(p)p.hidden=false}}/><div className="image-placeholder" hidden><span>N</span></div></div>
               <div className="bento-copy">{news.section&&<div className="section-label">{news.section}</div>}<h2>{news.title}</h2>{news.body&&<p>{news.body}</p>}</div>
               <div className="bento-open">読む <span>›</span></div>
             </button>
