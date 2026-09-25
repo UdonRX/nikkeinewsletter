@@ -32,18 +32,40 @@ function visibleText(el: Element) {
   return clean(el.textContent || "");
 }
 
-function imageFromBlock(el: Element) {
-  const images = Array.from(el.querySelectorAll("img[src]"));
-  for (const img of images) {
-    const src = img.getAttribute("src") || "";
+function imageFromBlock(el: Element, baseUrl?: string) {
+  const candidates: { src: string; alt: string }[] = [];
+
+  for (const img of Array.from(el.querySelectorAll("img"))) {
+    const src =
+      img.getAttribute("src") ||
+      img.getAttribute("data-src") ||
+      img.getAttribute("data-original") ||
+      img.getAttribute("data-lazy-src") ||
+      "";
+    const srcset = img.getAttribute("srcset") || img.getAttribute("data-srcset") || "";
+    const bestSrc = src || srcset.split(",")[0]?.trim().split(/\s+/)[0] || "";
+    if (!bestSrc || bestSrc.startsWith("data:") || bestSrc.startsWith("cid:")) continue;
+
     const width = Number(img.getAttribute("width") || "0");
     const height = Number(img.getAttribute("height") || "0");
-    if (!src || src.startsWith("data:") || src.startsWith("cid:")) continue;
     if ((width > 0 && width < 80) || (height > 0 && height < 50)) continue;
-    if (/spacer|tracking|pixel|logo|icon/i.test(src)) continue;
-    return { src, alt: clean(img.getAttribute("alt") || "") };
+    if (/spacer|tracking|pixel|logo|icon|blank/i.test(bestSrc)) continue;
+
+    candidates.push({
+      src: resolveUrl(bestSrc, baseUrl),
+      alt: clean(img.getAttribute("alt") || ""),
+    });
   }
-  return null;
+
+  return candidates[0] || null;
+}
+
+function resolveUrl(value: string, baseUrl?: string) {
+  try {
+    return new URL(value, baseUrl || "https://www.nikkei.com/").toString();
+  } catch {
+    return value;
+  }
 }
 
 /**
@@ -106,8 +128,8 @@ export function parseNikkeiEmail(
     const sectionCandidate = lines.find((x) => SECTION.test(x));
     if (sectionCandidate) section = sectionCandidate;
 
-    let image = imageFromBlock(block);
-    if (!image && block.parentElement) image = imageFromBlock(block.parentElement);
+    let image = imageFromBlock(block, href);
+    if (!image && block.parentElement) image = imageFromBlock(block.parentElement, href);
 
     const body = clean(
       raw
