@@ -23,9 +23,13 @@ function editionLabel(internalDate: string | undefined, dateHeader: string, cont
   // 日経メール本文に入っている「○/○ 朝版・昼版・夕版」を最優先する。
   // 配信時刻だけで判定すると、遅配・再送・タイムゾーン差で刊がずれるため。
   const head = content.slice(0, 12000);
-  if (/(?:朝刊|朝版)/.test(head)) return "朝刊";
-  if (/(?:昼刊|昼版)/.test(head)) return "昼刊";
-  if (/(?:夕刊|夕版)/.test(head)) return "夕刊";
+  const explicitEdition = head.match(/(?:\d{1,2}\s*[\/月-]\s*\d{1,2}(?:\s*日)?|\d{1,2}月\d{1,2}日)[^\n]{0,30}(朝刊|朝版|昼刊|昼版|夕刊|夕版)/);
+  if (explicitEdition) {
+    const label = explicitEdition[1];
+    if (label.includes("朝")) return "朝刊";
+    if (label.includes("昼")) return "昼刊";
+    if (label.includes("夕")) return "夕刊";
+  }
 
   const d = internalDate ? new Date(Number(internalDate)) : new Date(dateHeader);
   const parts = new Intl.DateTimeFormat("ja-JP", {
