@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
       const dateHeader = header(full, "Date") ?? "";
       const kind = sender.includes("sokuho-news@mx.nikkei.com")
         ? "速報"
-        : editionLabel(full.internalDate, dateHeader);
+        : editionLabel(full.internalDate ?? undefined, dateHeader);
       const { html, text } = await extractMimeBody(accessToken, m.id!, full.payload);
       const news = parseNikkeiEmail(html, text);
 
