@@ -51,7 +51,7 @@ function imageCandidate(img: Element, baseUrl?: string) {
 
   try {
     return {
-      src: new URL(bestSrc, baseUrl || "https://www.nikkei.com/").toString(),
+      src: bestSrc.startsWith("/") ? bestSrc : new URL(bestSrc, baseUrl || "https://www.nikkei.com/").toString(),
       alt: clean(img.getAttribute("alt") || ""),
     };
   } catch {
