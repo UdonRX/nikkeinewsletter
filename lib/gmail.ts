@@ -2,7 +2,8 @@ import iconv from "iconv-lite";
 import { gmailClient } from "./google";
 
 function decodeBase64Url(s: string, charset = "utf-8") {
-  const bytes = Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  const normalized = s.replace(/-/g, "+").replace(/_/g, "/");
+  const bytes = Buffer.from(normalized, "base64");
   try {
     return iconv.decode(bytes, normalizeCharset(charset));
   } catch {
@@ -25,8 +26,14 @@ function partCharset(part: any) {
   return match?.[1] || "utf-8";
 }
 
+function headerValue(part: any, name: string) {
+  return part.headers?.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value || "";
+}
+
 function decodeQuotedPrintable(s: string) {
-  return s.replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/=\r?\n/g, "");
+  return s
+    .replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/=\r?\n/g, "");
 }
 
 function decodeMimeHeader(value: string) {
@@ -58,20 +65,43 @@ export async function getMessage(accessToken: string, id: string) {
   return r.data;
 }
 
-export function extractMimeBody(payload: any): { html: string; text: string } {
+export async function extractMimeBody(accessToken: string, messageId: string, payload: any): Promise<{ html: string; text: string }> {
+  const gmail = await gmailClient(accessToken);
   let html = "";
   let text = "";
-  const walk = (p: any) => {
+  const cidMap = new Map<string, string>();
+
+  const walk = async (p: any): Promise<void> => {
     if (!p) return;
     const mime = p.mimeType || "";
+    const contentId = headerValue(p, "Content-ID").replace(/^<|>$/g, "").trim();
+
+    if (mime.startsWith("image/") && p.body?.attachmentId && contentId) {
+      const imageUrl =
+        "/api/email-image?messageId=" + encodeURIComponent(messageId) +
+        "&attachmentId=" + encodeURIComponent(p.body.attachmentId) +
+        "&mimeType=" + encodeURIComponent(mime);
+      cidMap.set(contentId, imageUrl);
+    }
+
     if (p.body?.data) {
       const v = decodeBase64Url(p.body.data, partCharset(p));
       if (mime === "text/html" && !html) html = v;
       if (mime === "text/plain" && !text) text = v;
     }
-    for (const x of p.parts || []) walk(x);
+
+    for (const x of p.parts || []) await walk(x);
   };
-  walk(payload);
+
+  await walk(payload);
+
+  if (html && cidMap.size) {
+    for (const [cid, url] of cidMap) {
+      const escaped = cid.replace(/[.*+?^$()|[\]\\]/g, "\\$&");
+      html = html.replace(new RegExp("cid:" + escaped, "gi"), url);
+    }
+  }
+
   return { html, text };
 }
 
