@@ -30,6 +30,7 @@ type ReaderData = {
   contentHtml: string;
   url: string;
   available: boolean;
+  paywalled?: boolean;
   source?: string;
   fetchError?: string;
 };
@@ -426,7 +427,15 @@ export default function Home() {
             {readerLoading ? (
               <div className="reader-loading">記事を読み込んでいます…</div>
             ) : reader.data?.contentHtml ? (
-              <div className="article-content" style={{ fontSize: fontScale + "em" }} dangerouslySetInnerHTML={{ __html: reader.data.contentHtml }} />
+              <>
+                <div className="article-content" style={{ fontSize: fontScale + "em" }} dangerouslySetInnerHTML={{ __html: reader.data.contentHtml }} />
+                {reader.data.paywalled && (
+                  <div className="paywall-notice">
+                    <strong>ここから先は有料会員限定</strong>
+                    <p>この記事は有料会員限定記事です。続きは日経の有料会員向けページで読むことができます。</p>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="reader-unavailable">
                 <p>{news?.body || "本文を取得できませんでした。"}</p>
