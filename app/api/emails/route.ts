@@ -19,7 +19,14 @@ async function token(req: NextRequest) {
   return fresh;
 }
 
-function editionLabel(internalDate: string | undefined, dateHeader: string) {
+function editionLabel(internalDate: string | undefined, dateHeader: string, content = "") {
+  // 日経メール本文に入っている「○/○ 朝版・昼版・夕版」を最優先する。
+  // 配信時刻だけで判定すると、遅配・再送・タイムゾーン差で刊がずれるため。
+  const head = content.slice(0, 12000);
+  if (/(?:朝刊|朝版)/.test(head)) return "朝刊";
+  if (/(?:昼刊|昼版)/.test(head)) return "昼刊";
+  if (/(?:夕刊|夕版)/.test(head)) return "夕刊";
+
   const d = internalDate ? new Date(Number(internalDate)) : new Date(dateHeader);
   const parts = new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
@@ -31,6 +38,23 @@ function editionLabel(internalDate: string | undefined, dateHeader: string) {
   if (hour >= 5 && hour < 11) return "朝刊";
   if (hour >= 11 && hour < 17) return "昼刊";
   return "夕刊";
+}
+
+function issueDate(internalDate: string | undefined, dateHeader: string, content = "") {
+  const explicit = content.match(/(?:^|[^0-9])(20\d{2}[年\/-])?(\d{1,2})[月\/-](\d{1,2})(?:日)?/);
+  const d = internalDate ? new Date(Number(internalDate)) : new Date(dateHeader);
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const year = Number(parts.find((part) => part.type === "year")?.value ?? d.getFullYear());
+  const month = Number(parts.find((part) => part.type === "month")?.value ?? d.getMonth() + 1);
+  const day = Number(parts.find((part) => part.type === "day")?.value ?? d.getDate());
+  if (!explicit) return `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+  const y = explicit[1] ? Number(explicit[1].replace(/[^0-9]/g,"")) : year;
+  return `${y}-${String(Number(explicit[2])).padStart(2,"0")}-${String(Number(explicit[3])).padStart(2,"0")}`;
 }
 
 export async function GET(req: NextRequest) {
@@ -52,10 +76,12 @@ export async function GET(req: NextRequest) {
       const from = header(full, "From");
       const sender = from.toLowerCase();
       const dateHeader = header(full, "Date") ?? "";
+      const { html, text } = await extractMimeBody(accessToken, m.id!, full.payload);
+      const contentForEdition = html || text || "";
       const kind = sender.includes("sokuho-news@mx.nikkei.com")
         ? "速報"
-        : editionLabel(full.internalDate ?? undefined, dateHeader);
-      const { html, text } = await extractMimeBody(accessToken, m.id!, full.payload);
+        : editionLabel(full.internalDate ?? undefined, dateHeader, contentForEdition);
+      const mailIssueDate = issueDate(full.internalDate ?? undefined, dateHeader, contentForEdition);
       const news = parseNikkeiEmail(html, text);
 
       emails.push({
@@ -66,6 +92,7 @@ export async function GET(req: NextRequest) {
         subject: header(full, "Subject"),
         receivedAt: dateHeader,
         internalDate: full.internalDate || "",
+        issueDate: mailIssueDate,
         snippet: full.snippet || "",
         newsCount: news.length,
         news,
