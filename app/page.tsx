@@ -281,16 +281,21 @@ export default function Home() {
 
   function finishHorizontalSwipe(dx: number) {
     const threshold = 90;
-    if (Math.abs(dx) < threshold) {
+    if (Math.abs(dx) < threshold || isSwipeAnimating) {
       setSwipeX(0);
       setSwipeAction(null);
       return;
     }
 
-    // 右スワイプだけを「保存 / 保存解除」に使う。
-    // 左スワイプは何もしない。
+    // 通常のShorts:
+    //   右 = ホームへ戻る
+    //   左 = 保存して次の記事
+    //
+    // 「あとで読む」:
+    //   右 = 保存解除して次の記事
+    //   左 = 何もしない
     if (dx > 0) {
-      setSwipeAction(savedMode ? "remove" : "save");
+      setSwipeAction(savedMode ? "remove" : "home");
       setIsSwipeAnimating(true);
 
       window.setTimeout(() => {
@@ -304,21 +309,54 @@ export default function Home() {
               ),
             );
           }
-        } else if (selectedIssue) {
-          saveNews(selectedIssue, shortIndex);
+
+          setSwipeX(0);
+          setSwipeAction(null);
+          setIsSwipeAnimating(false);
+
+          // 保存解除後は、同じ位置に次の保存記事を表示する。
+          // 最後の1件ならホームへ戻る。
+          const nextLength = Math.max(0, savedNews.length - 1);
+          if (nextLength === 0) {
+            closeShorts();
+          } else if (shortIndex >= nextLength) {
+            setShortIndex(nextLength - 1);
+          } else {
+            setShortIndex(shortIndex);
+          }
+        } else {
+          // 右スワイプは保存せず、そのままホームへ戻る。
+          setSwipeX(0);
+          setSwipeAction(null);
+          setIsSwipeAnimating(false);
+          closeShorts();
         }
+      }, 230);
+      return;
+    }
+
+    // 通常のShortsの左スワイプは保存して次の記事へ。
+    if (!savedMode) {
+      setSwipeAction("save");
+      setIsSwipeAnimating(true);
+
+      const email = selectedIssue;
+      const index = shortIndex;
+
+      window.setTimeout(() => {
+        if (email) saveNews(email, index);
 
         setSwipeX(0);
         setSwipeAction(null);
         setIsSwipeAnimating(false);
 
-        // 保存/保存解除後は、その位置に次の記事が来る。
-        const count = savedMode ? savedNews.length : selectedIssue?.news.length || 0;
-        if (shortIndex >= count - 1) {
-          if (shortIndex > 0) setShortIndex(shortIndex - 1);
+        const count = email?.news.length || 0;
+        if (index < count - 1) {
+          // 保存後も同じindexを表示すれば、元のindex+1の記事が現れる。
+          setShortIndex(index);
         } else {
-          // 同じ index のまま次の記事へ。
-          setShortIndex(shortIndex);
+          // 最後の記事を保存した場合はShortsを終了。
+          closeShorts();
         }
       }, 230);
     }
