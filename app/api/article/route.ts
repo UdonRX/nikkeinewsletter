@@ -17,10 +17,42 @@ function textToHtml(text: string) {
   return text.split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => "<p>" + escapeHtml(line) + "</p>").join("");
 }
 
-function sanitizeArticleHtml(html: string, baseUrl: string) {
+function jsonLdArticle(doc: Document) {
+  for (const script of Array.from(doc.querySelectorAll('script[type="application/ld+json"]'))) {
+    try {
+      const raw = JSON.parse(script.textContent || "");
+      const list = Array.isArray(raw) ? raw : raw["@graph"] || [raw];
+      for (const item of list) {
+        if (!item || typeof item !== "object") continue;
+        const type = Array.isArray(item["@type"]) ? item["@type"].join(" ") : String(item["@type"] || "");
+        if (/NewsArticle|Article/i.test(type) && typeof item.articleBody === "string") {
+          const image = Array.isArray(item.image) ? item.image[0] : item.image;
+          return {
+            body: item.articleBody,
+            image: typeof image === "string" ? image : image?.url || "",
+            headline: typeof item.headline === "string" ? item.headline : "",
+          };
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
+function sanitizeBodyHtml(html: string, baseUrl: string) {
   const dom = new JSDOM("<main>" + html + "</main>");
   const doc = dom.window.document;
-  for (const el of Array.from(doc.querySelectorAll("script,style,noscript,nav,header,footer,aside,form,iframe,video,svg"))) el.remove();
+
+  const removeSelectors = [
+    "script","style","noscript","nav","header","footer","aside","form","iframe","video","svg",
+    "[class*='share']","[id*='share']","[class*='social']","[id*='social']",
+    "[class*='recommend']","[id*='recommend']","[class*='related']","[id*='related']",
+    "[class*='comment']","[id*='comment']","[class*='button']","[id*='button']",
+    "[class*='login']","[id*='login']","[class*='membership']","[id*='membership']",
+    "[class*='paywall']","[id*='paywall']"
+  ];
+
+  for (const el of Array.from(doc.querySelectorAll(removeSelectors.join(",")))) el.remove();
 
   for (const el of Array.from(doc.querySelectorAll("*"))) {
     for (const attr of Array.from(el.attributes)) {
@@ -39,6 +71,7 @@ function sanitizeArticleHtml(html: string, baseUrl: string) {
       }
     }
   }
+
   return doc.querySelector("main")?.innerHTML || "";
 }
 
@@ -77,7 +110,6 @@ export async function GET(req: NextRequest) {
         url: url.toString(),
         available: Boolean(fallbackBody),
         source: "newsletter_fallback",
-        fetchError: "article_fetch_" + response.status,
       });
     }
 
@@ -90,7 +122,6 @@ export async function GET(req: NextRequest) {
         url: url.toString(),
         available: Boolean(fallbackBody),
         source: "newsletter_fallback",
-        fetchError: "redirected_outside_nikkei",
       });
     }
 
@@ -98,41 +129,56 @@ export async function GET(req: NextRequest) {
     const dom = new JSDOM(html);
     const doc = dom.window.document;
 
-    const title =
-      doc.querySelector('meta[property="og:title"]')?.getAttribute("content") ||
-      doc.querySelector("h1")?.textContent?.trim() ||
-      doc.title ||
-      fallbackTitle;
+    const ogTitle = doc.querySelector('meta[property="og:title"]')?.getAttribute("content") || "";
+    const ogImage = doc.querySelector('meta[property="og:image"]')?.getAttribute("content") || "";
+    const structured = jsonLdArticle(doc);
 
-    const imageUrl = doc.querySelector('meta[property="og:image"]')?.getAttribute("content") || "";
+    const title = structured?.headline || ogTitle || doc.querySelector("h1")?.textContent?.trim() || fallbackTitle;
+    const imageUrl = structured?.image || ogImage || "";
+
+    if (structured?.body) {
+      return NextResponse.json({
+        title,
+        imageUrl: imageUrl ? new URL(imageUrl, finalUrl).toString() : "",
+        contentHtml: textToHtml(structured.body),
+        url: finalUrl.toString(),
+        available: true,
+        source: "nikkei_structured_data",
+      });
+    }
 
     const candidates = [
       doc.querySelector('[itemprop="articleBody"]'),
-      doc.querySelector("article"),
       doc.querySelector(".article-body"),
       doc.querySelector(".articleBody"),
       doc.querySelector('[class*="article-body"]'),
       doc.querySelector('[class*="articleBody"]'),
-      doc.querySelector("main"),
+      doc.querySelector("article"),
     ].filter(Boolean) as Element[];
 
-    const source = candidates.sort((a, b) => (b.textContent?.length || 0) - (a.textContent?.length || 0))[0];
-    const contentHtml = source ? sanitizeArticleHtml(source.innerHTML, finalUrl.toString()) : "";
+    const source = candidates.sort((a,b)=>(b.textContent?.trim().length||0)-(a.textContent?.trim().length||0))[0];
+    const contentHtml = source ? sanitizeBodyHtml(source.innerHTML, finalUrl.toString()) : "";
 
-    if (!contentHtml || (source?.textContent?.trim().length || 0) < 120) {
+    if (contentHtml && (source?.textContent?.trim().length || 0) >= 120) {
       return NextResponse.json({
         title,
-        imageUrl,
-        contentHtml: textToHtml(fallbackBody),
+        imageUrl: imageUrl ? new URL(imageUrl, finalUrl).toString() : "",
+        contentHtml,
         url: finalUrl.toString(),
-        available: Boolean(fallbackBody),
-        source: "newsletter_fallback",
-        fetchError: "article_body_not_found",
+        available: true,
+        source: "nikkei_article_body",
       });
     }
 
-    return NextResponse.json({ title, imageUrl, contentHtml, url: finalUrl.toString(), available: true, source: "nikkei" });
-  } catch (e) {
+    return NextResponse.json({
+      title,
+      imageUrl: imageUrl ? new URL(imageUrl, finalUrl).toString() : "",
+      contentHtml: textToHtml(fallbackBody),
+      url: finalUrl.toString(),
+      available: Boolean(fallbackBody),
+      source: "newsletter_fallback",
+    });
+  } catch {
     return NextResponse.json({
       title: fallbackTitle,
       imageUrl: "",
@@ -140,7 +186,6 @@ export async function GET(req: NextRequest) {
       url: url.toString(),
       available: Boolean(fallbackBody),
       source: "newsletter_fallback",
-      fetchError: e instanceof Error ? e.message : "article_fetch_failed",
     });
   }
 }
