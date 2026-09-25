@@ -129,10 +129,18 @@ function latestRegular(emails: Email[]) {
   return emails.find((email) => email.kind !== "速報");
 }
 
-function iconFor(kind: "朝刊" | "昼刊" | "夕刊") {
-  if (kind === "朝刊") return "☼";
-  if (kind === "昼刊") return "◉";
-  return "☾";
+function newsImageSrc(news?: News) {
+  return news?.url ? "/api/news-image?url=" + encodeURIComponent(news.url) : "";
+}
+
+function preloadIssueImages(email: Email, startIndex: number, count = 6) {
+  for (let i = Math.max(0, startIndex); i < Math.min(email.news.length, startIndex + count); i++) {
+    const src = newsImageSrc(email.news[i]);
+    if (!src) continue;
+    const image = new Image();
+    image.decoding = "async";
+    image.src = src;
+  }
 }
 
 export default function Home() {
@@ -163,6 +171,25 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem("nn_saved_news", JSON.stringify(saved));
   }, [saved]);
+
+  // Shortsを開いた瞬間に、現在位置から先の写真を先読みする。
+  // スワイプ後に古い画像が残るのを防ぐため、次の5件＋現在位置をブラウザキャッシュへ入れる。
+  useEffect(() => {
+    if (!selectedIssue || savedMode) return;
+    preloadIssueImages(selectedIssue, shortIndex, 6);
+    if (shortIndex > 0) preloadIssueImages(selectedIssue, shortIndex - 1, 2);
+  }, [selectedIssue, savedMode, shortIndex]);
+
+  useEffect(() => {
+    if (!savedMode) return;
+    for (let i = shortIndex; i < Math.min(savedNews.length, shortIndex + 6); i++) {
+      const src = newsImageSrc(savedNews[i]?.news);
+      if (!src) continue;
+      const image = new Image();
+      image.decoding = "async";
+      image.src = src;
+    }
+  }, [savedMode, shortIndex, savedNews]);
 
   useEffect(() => {
     fetch("/api/emails", { cache: "no-store" })
@@ -204,6 +231,7 @@ export default function Home() {
     setSavedMode(false);
     setSelectedIssue(email);
     setShortIndex(0);
+    preloadIssueImages(email, 0, 8);
   }
 
   function startSaved() {
@@ -348,9 +376,7 @@ export default function Home() {
   if (short) {
     const total = savedMode ? savedNews.length : selectedIssue?.news.length || 0;
     const label = savedMode ? "あとで読む" : short.email.kind;
-    const imageSrc = short.news.url
-      ? "/api/news-image?url=" + encodeURIComponent(short.news.url)
-      : "";
+    const imageSrc = newsImageSrc(short.news);
 
     let touchStartX = 0;
     let touchStartY = 0;
