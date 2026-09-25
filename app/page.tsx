@@ -181,17 +181,6 @@ export default function Home() {
   }, [selectedIssue, savedMode, shortIndex]);
 
   useEffect(() => {
-    if (!savedMode) return;
-    for (let i = shortIndex; i < Math.min(savedNews.length, shortIndex + 6); i++) {
-      const src = newsImageSrc(savedNews[i]?.news);
-      if (!src) continue;
-      const image = new Image();
-      image.decoding = "async";
-      image.src = src;
-    }
-  }, [savedMode, shortIndex, savedNews]);
-
-  useEffect(() => {
     fetch("/api/emails", { cache: "no-store" })
       .then(async (r) => {
         const j = await r.json().catch(() => ({}));
@@ -215,6 +204,17 @@ export default function Home() {
       })
       .filter(Boolean) as Array<{ email: Email; news: News; newsIndex: number }>;
   }, [emails, saved]);
+
+  useEffect(() => {
+    if (!savedMode) return;
+    for (let i = shortIndex; i < Math.min(savedNews.length, shortIndex + 6); i++) {
+      const src = newsImageSrc(savedNews[i]?.news);
+      if (!src) continue;
+      const image = new Image();
+      image.decoding = "async";
+      image.src = src;
+    }
+  }, [savedMode, shortIndex, savedNews]);
 
   const homeIssues = useMemo(
     () =>
