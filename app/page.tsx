@@ -352,8 +352,9 @@ export default function Home() {
 
         const count = email?.news.length || 0;
         if (index < count - 1) {
-          // 保存後も同じindexを表示すれば、元のindex+1の記事が現れる。
-          setShortIndex(index);
+          // 通常の刊は保存しても元データから記事を削除しないので、
+          // 明示的に次の記事へ進む。
+          setShortIndex(index + 1);
         } else {
           // 最後の記事を保存した場合はShortsを終了。
           closeShorts();
