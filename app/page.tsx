@@ -63,6 +63,37 @@ function dateKey(value: string | number | Date) {
   return y && m && day ? `${y}-${m}-${day}` : "";
 }
 
+function iconFor(kind: Email["kind"]) {
+  if (kind === "朝刊") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.2" />
+        <path d="M12 2.5v2M12 19.5v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2.5 12h2M19.5 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+      </svg>
+    );
+  }
+  if (kind === "昼刊") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="7.2" />
+        <path d="M12 4.8v14.4M4.8 12h14.4" />
+      </svg>
+    );
+  }
+  if (kind === "夕刊") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M18.6 15.7A8 8 0 0 1 8.3 5.4 8.4 8.4 0 1 0 18.6 15.7Z" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="7" />
+    </svg>
+  );
+}
+
 function latestRegular(emails: Email[]) {
   return emails.find((email) => email.kind !== "速報" && email.news.length > 0);
 }
