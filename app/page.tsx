@@ -288,14 +288,14 @@ export default function Home() {
     }
 
     // 通常のShorts:
-    //   右 = ホームへ戻る
-    //   左 = 保存して次の記事
+    //   左 = ホームへ戻る
+    //   右 = 保存して次の記事
     //
     // 「あとで読む」:
+    //   左 = ホームへ戻る
     //   右 = 保存解除して次の記事
-    //   左 = 何もしない
-    if (dx > 0) {
-      setSwipeAction(savedMode ? "remove" : "home");
+    if (dx < 0) {
+      setSwipeAction(savedMode ? "home" : "home");
       setIsSwipeAnimating(true);
 
       window.setTimeout(() => {
@@ -335,8 +335,7 @@ export default function Home() {
       return;
     }
 
-    // 通常のShortsの左スワイプは保存して次の記事へ。
-    if (!savedMode) {
+    // 通常のShortsの右スワイプは保存して次の記事へ。
       setSwipeAction("save");
       setIsSwipeAnimating(true);
 
