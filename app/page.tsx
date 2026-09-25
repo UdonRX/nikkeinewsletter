@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type News = {
   title: string;
@@ -40,12 +40,6 @@ type ReaderTarget = {
   data?: ReaderData;
 };
 
-const HOUR_START = {
-  朝刊: 5,
-  昼刊: 11,
-  夕刊: 17,
-} as const;
-
 function haptic(pattern: number | number[] = 8) {
   if (typeof navigator !== "undefined" && "vibrate" in navigator) {
     try {
@@ -69,64 +63,33 @@ function dateKey(value: string | number | Date) {
   return y && m && day ? `${y}-${m}-${day}` : "";
 }
 
-function addDays(key: string, amount: number) {
-  const d = new Date(key + "T12:00:00+09:00");
-  d.setDate(d.getDate() + amount);
-  return dateKey(d);
+function latestRegular(emails: Email[]) {
+  return emails.find((email) => email.kind !== "速報" && email.news.length > 0);
 }
 
-function todayKey() {
-  return dateKey(new Date());
-}
-
-function getTimeSlots(now = new Date()): Array<{ kind: "朝刊" | "昼刊" | "夕刊"; offset: number }> {
-  const hour = Number(
-    new Intl.DateTimeFormat("ja-JP", {
-      timeZone: "Asia/Tokyo",
-      hour: "numeric",
-      hour12: false,
-    }).format(now),
-  );
-
-  if (hour >= HOUR_START.夕刊) {
-    return [
-      { kind: "夕刊", offset: 0 },
-      { kind: "昼刊", offset: 0 },
-      { kind: "朝刊", offset: 0 },
-    ];
-  }
-
-  if (hour >= HOUR_START.昼刊) {
-    return [
-      { kind: "昼刊", offset: 0 },
-      { kind: "朝刊", offset: 0 },
-      { kind: "夕刊", offset: -1 },
-    ];
-  }
-
-  return [
-    { kind: "朝刊", offset: 0 },
-    { kind: "夕刊", offset: -1 },
-    { kind: "昼刊", offset: -1 },
-  ];
-}
-
-function pickIssue(emails: Email[], kind: "朝刊" | "昼刊" | "夕刊", targetDate: string) {
-  const candidates = emails
-    .filter((email) => email.kind === kind && email.news.length > 0)
+function latestRegularIssues(emails: Email[]) {
+  const regular = emails
+    .filter((email) => email.kind !== "速報" && email.news.length > 0)
+    .slice()
     .sort((a, b) => Number(b.internalDate || 0) - Number(a.internalDate || 0));
 
-  // まず指定日の刊を探す。見つからない場合は、その日以前で一番新しい同じ刊を使う。
-  // Gmail側の配信遅延や休日などで「今日の刊」がまだ存在しない場合でも、
-  // ホームの刊ボタンが0件にならないようにする。
-  return (
-    candidates.find((email) => (email.issueDate || dateKey(email.internalDate || email.receivedAt)) === targetDate) ||
-    candidates.find((email) => (email.issueDate || dateKey(email.internalDate || email.receivedAt)) < targetDate)
-  );
-}
+  const seen = new Set<string>();
+  const result: Email[] = [];
 
-function latestRegular(emails: Email[]) {
-  return emails.find((email) => email.kind !== "速報");
+  for (const email of regular) {
+    const issueKey = [
+      email.issueDate || dateKey(email.internalDate || email.receivedAt),
+      email.kind,
+    ].join("|");
+
+    if (seen.has(issueKey)) continue;
+    seen.add(issueKey);
+    result.push(email);
+
+    if (result.length >= 3) break;
+  }
+
+  return result;
 }
 
 function newsImageSrc(news?: News) {
@@ -155,6 +118,12 @@ export default function Home() {
   const [shortIndex, setShortIndex] = useState(0);
   const [savedMode, setSavedMode] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [swipeX, setSwipeX] = useState(0);
+  const [isSwipeAnimating, setIsSwipeAnimating] = useState(false);
+  const [swipeAction, setSwipeAction] = useState<"save" | "remove" | null>(null);
+  const touchStartXRef = useRef(0);
+  const touchStartYRef = useRef(0);
+  const touchActiveRef = useRef(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
@@ -192,9 +161,9 @@ export default function Home() {
       .finally(() => setLoading(false));
   }, []);
 
-  const slots = useMemo(() => getTimeSlots(now), [now]);
   const breakingEmail = useMemo(() => emails.find((email) => email.kind === "速報" && email.news.length > 0), [emails]);
   const latest = useMemo(() => latestRegular(emails), [emails]);
+  const latestIssues = useMemo(() => latestRegularIssues(emails), [emails]);
   const savedNews = useMemo(() => {
     return saved
       .map((item) => {
@@ -216,14 +185,7 @@ export default function Home() {
     }
   }, [savedMode, shortIndex, savedNews]);
 
-  const homeIssues = useMemo(
-    () =>
-      slots.map((slot) => {
-        const target = addDays(todayKey(), slot.offset);
-        return { ...slot, targetDate: target, email: pickIssue(emails, slot.kind, target) };
-      }),
-    [emails, slots],
-  );
+  const homeIssues = latestIssues;
 
   function startIssue(email: Email) {
     if (!email.news.length) return;
@@ -292,25 +254,64 @@ export default function Home() {
     setShortIndex(next);
   }
 
-  function handleShortSwipe(dx: number, dy: number) {
-    if (Math.abs(dx) < 55 && Math.abs(dy) < 55) return;
+  function finishHorizontalSwipe(dx: number) {
+    const threshold = 90;
+    if (Math.abs(dx) < threshold) {
+      setSwipeX(0);
+      setSwipeAction(null);
+      return;
+    }
 
+    // 右スワイプだけを「保存 / 保存解除」に使う。
+    // 左スワイプは何もしない。
+    if (dx > 0) {
+      setSwipeAction(savedMode ? "remove" : "save");
+      setIsSwipeAnimating(true);
+
+      window.setTimeout(() => {
+        if (savedMode) {
+          const item = savedNews[shortIndex];
+          if (item) {
+            setSaved((current) =>
+              current.filter(
+                (savedItem) =>
+                  !(savedItem.emailId === item.email.id && savedItem.newsIndex === item.newsIndex),
+              ),
+            );
+          }
+        } else if (selectedIssue) {
+          saveNews(selectedIssue, shortIndex);
+        }
+
+        setSwipeX(0);
+        setSwipeAction(null);
+        setIsSwipeAnimating(false);
+
+        // 保存/保存解除後は、その位置に次の記事が来る。
+        const count = savedMode ? savedNews.length : selectedIssue?.news.length || 0;
+        if (shortIndex >= count - 1) {
+          if (shortIndex > 0) setShortIndex(shortIndex - 1);
+        } else {
+          // 同じ index のまま次の記事へ。
+          setShortIndex(shortIndex);
+        }
+      }, 230);
+    }
+  }
+
+  function handleShortSwipe(dx: number, dy: number) {
     if (Math.abs(dy) > Math.abs(dx)) {
+      if (Math.abs(dy) < 55) {
+        setSwipeX(0);
+        return;
+      }
+      setSwipeX(0);
       if (dy < 0) moveShort(1);
       else moveShort(-1);
       return;
     }
 
-    if (dx > 0) {
-      closeShorts();
-    } else {
-      if (savedMode) {
-        const item = savedNews[shortIndex];
-        if (item) saveNews(item.email, item.newsIndex);
-      } else if (selectedIssue) {
-        saveNews(selectedIssue, shortIndex);
-      }
-    }
+    finishHorizontalSwipe(dx);
   }
 
   function currentShortNews() {
@@ -378,20 +379,42 @@ export default function Home() {
     const label = savedMode ? "あとで読む" : short.email.kind;
     const imageSrc = newsImageSrc(short.news);
 
-    let touchStartX = 0;
-    let touchStartY = 0;
-
     return (
       <main
         className="app-shell shorts-shell"
         onTouchStart={(event) => {
-          touchStartX = event.changedTouches[0]?.clientX || 0;
-          touchStartY = event.changedTouches[0]?.clientY || 0;
+          touchStartXRef.current = event.changedTouches[0]?.clientX || 0;
+          touchStartYRef.current = event.changedTouches[0]?.clientY || 0;
+          touchActiveRef.current = true;
+          setIsSwipeAnimating(false);
+          setSwipeAction(null);
+        }}
+        onTouchMove={(event) => {
+          if (!touchActiveRef.current || isSwipeAnimating) return;
+          const x = event.changedTouches[0]?.clientX || 0;
+          const y = event.changedTouches[0]?.clientY || 0;
+          const dx = x - touchStartXRef.current;
+          const dy = y - touchStartYRef.current;
+
+          // 縦スワイプ中はカードを左右に動かさない。
+          if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 12) {
+            setSwipeX(0);
+            return;
+          }
+
+          if (Math.abs(dx) > 8) {
+            setSwipeX(dx);
+          }
         }}
         onTouchEnd={(event) => {
+          if (!touchActiveRef.current) return;
+          touchActiveRef.current = false;
           const endX = event.changedTouches[0]?.clientX || 0;
           const endY = event.changedTouches[0]?.clientY || 0;
-          handleShortSwipe(endX - touchStartX, endY - touchStartY);
+          handleShortSwipe(
+            endX - touchStartXRef.current,
+            endY - touchStartYRef.current,
+          );
         }}
       >
         <div className="shorts-header">
@@ -402,7 +425,13 @@ export default function Home() {
         <div className="shorts-progress"><span style={{ width: total ? ((shortIndex + 1) / total) * 100 + "%" : "0%" }} /></div>
 
         <div className="shorts-stage">
-          <div className="short-card">
+          <div
+            className={"short-card " + (isSwipeAnimating ? "is-swiping-away" : "")}
+            style={{
+              transform: `translate3d(${isSwipeAnimating ? (swipeX >= 0 ? 120 : -120) : swipeX}px,0,0) rotate(${(isSwipeAnimating ? (swipeX >= 0 ? 120 : -120) : swipeX) * 0.035}deg)`,
+              transition: isSwipeAnimating ? "transform .23s cubic-bezier(.22,.7,.2,1)" : "none",
+            }}
+          >
             <div className="short-image">
               {imageSrc ? (
                 <img
@@ -464,18 +493,17 @@ export default function Home() {
       </section>
 
       <nav className="issue-nav" aria-label="ニュース刊">
-        {homeIssues.map((item) => (
+        {homeIssues.map((email) => (
           <button
             type="button"
-            className={"issue-icon " + (!item.email ? "is-empty" : "")}
-            key={item.kind + item.targetDate}
-            aria-label={item.email ? item.kind : item.kind + "はありません"}
-            disabled={!item.email}
-            onClick={() => item.email && startIssue(item.email)}
+            className="issue-icon"
+            key={email.id}
+            aria-label={email.kind}
+            onClick={() => startIssue(email)}
           >
-            <span className="issue-symbol">{iconFor(item.kind)}</span>
-            <span className="issue-label">{item.kind}</span>
-            <span className="issue-count">{item.email?.news.length || 0}</span>
+            <span className="issue-symbol">{iconFor(email.kind)}</span>
+            <span className="issue-label">{email.kind}</span>
+            <span className="issue-count">{email.news.length}</span>
           </button>
         ))}
         <button
