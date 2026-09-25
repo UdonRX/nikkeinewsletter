@@ -17,6 +17,7 @@ type Email = {
   subject: string;
   receivedAt: string;
   internalDate: string;
+  issueDate?: string;
   kind: "朝刊" | "昼刊" | "夕刊" | "速報";
   from: string;
   newsCount: number;
@@ -56,12 +57,16 @@ function haptic(pattern: number | number[] = 8) {
 function dateKey(value: string | number | Date) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "";
-  return new Intl.DateTimeFormat("en-CA", {
+  const parts = new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(d);
+  }).formatToParts(d);
+  const y = parts.find((part) => part.type === "year")?.value || "";
+  const m = parts.find((part) => part.type === "month")?.value || "";
+  const day = parts.find((part) => part.type === "day")?.value || "";
+  return y && m && day ? `${y}-${m}-${day}` : "";
 }
 
 function addDays(key: string, amount: number) {
@@ -115,8 +120,8 @@ function pickIssue(emails: Email[], kind: "朝刊" | "昼刊" | "夕刊", target
   // Gmail側の配信遅延や休日などで「今日の刊」がまだ存在しない場合でも、
   // ホームの刊ボタンが0件にならないようにする。
   return (
-    candidates.find((email) => dateKey(email.internalDate || email.receivedAt) === targetDate) ||
-    candidates.find((email) => dateKey(email.internalDate || email.receivedAt) < targetDate)
+    candidates.find((email) => (email.issueDate || dateKey(email.internalDate || email.receivedAt)) === targetDate) ||
+    candidates.find((email) => (email.issueDate || dateKey(email.internalDate || email.receivedAt)) < targetDate)
   );
 }
 
