@@ -295,47 +295,20 @@ export default function Home() {
     //   左 = ホームへ戻る
     //   右 = 保存解除して次の記事
     if (dx < 0) {
-      setSwipeAction(savedMode ? "home" : "home");
+      setSwipeAction("home");
       setIsSwipeAnimating(true);
 
       window.setTimeout(() => {
-        if (savedMode) {
-          const item = savedNews[shortIndex];
-          if (item) {
-            setSaved((current) =>
-              current.filter(
-                (savedItem) =>
-                  !(savedItem.emailId === item.email.id && savedItem.newsIndex === item.newsIndex),
-              ),
-            );
-          }
-
-          setSwipeX(0);
-          setSwipeAction(null);
-          setIsSwipeAnimating(false);
-
-          // 保存解除後は、同じ位置に次の保存記事を表示する。
-          // 最後の1件ならホームへ戻る。
-          const nextLength = Math.max(0, savedNews.length - 1);
-          if (nextLength === 0) {
-            closeShorts();
-          } else if (shortIndex >= nextLength) {
-            setShortIndex(nextLength - 1);
-          } else {
-            setShortIndex(shortIndex);
-          }
-        } else {
-          // 右スワイプは保存せず、そのままホームへ戻る。
-          setSwipeX(0);
-          setSwipeAction(null);
-          setIsSwipeAnimating(false);
-          closeShorts();
-        }
+        setSwipeX(0);
+        setSwipeAction(null);
+        setIsSwipeAnimating(false);
+        closeShorts();
       }, 230);
       return;
     }
 
     // 通常のShortsの右スワイプは保存して次の記事へ。
+    if (!savedMode) {
       setSwipeAction("save");
       setIsSwipeAnimating(true);
 
@@ -351,15 +324,43 @@ export default function Home() {
 
         const count = email?.news.length || 0;
         if (index < count - 1) {
-          // 通常の刊は保存しても元データから記事を削除しないので、
-          // 明示的に次の記事へ進む。
           setShortIndex(index + 1);
         } else {
-          // 最後の記事を保存した場合はShortsを終了。
           closeShorts();
         }
       }, 230);
+      return;
     }
+
+    // 「あとで読む」では右スワイプで保存解除して次の記事へ。
+    setSwipeAction("remove");
+    setIsSwipeAnimating(true);
+
+    const item = savedNews[shortIndex];
+
+    window.setTimeout(() => {
+      if (item) {
+        setSaved((current) =>
+          current.filter(
+            (savedItem) =>
+              !(savedItem.emailId === item.email.id && savedItem.newsIndex === item.newsIndex),
+          ),
+        );
+      }
+
+      setSwipeX(0);
+      setSwipeAction(null);
+      setIsSwipeAnimating(false);
+
+      const nextLength = Math.max(0, savedNews.length - 1);
+      if (nextLength === 0) {
+        closeShorts();
+      } else if (shortIndex >= nextLength) {
+        setShortIndex(nextLength - 1);
+      } else {
+        setShortIndex(shortIndex);
+      }
+    }, 230);
   }
 
   function handleShortSwipe(dx: number, dy: number) {
