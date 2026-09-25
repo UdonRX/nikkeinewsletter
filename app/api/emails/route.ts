@@ -19,6 +19,14 @@ async function token(req: NextRequest) {
   return fresh;
 }
 
+function editionLabel(internalDate: string | undefined, dateHeader: string) {
+  const d = internalDate ? new Date(Number(internalDate)) : new Date(dateHeader);
+  const hour = d.getHours();
+  if (hour >= 5 && hour < 11) return "朝刊";
+  if (hour >= 11 && hour < 17) return "昼刊";
+  return "夕刊";
+}
+
 export async function GET(req: NextRequest) {
   const accessToken = await token(req);
 
@@ -37,7 +45,7 @@ export async function GET(req: NextRequest) {
       const full = await getMessage(accessToken, m.id!);
       const from = header(full, "From");
       const sender = from.toLowerCase();
-      const kind = sender.includes("sokuho-news@mx.nikkei.com") ? "速報" : "定期便";
+      const kind = sender.includes("sokuho-news@mx.nikkei.com") ? "速報" : editionLabel(full.internalDate, header(full, "Date"));
       const { html, text } = await extractMimeBody(accessToken, m.id!, full.payload);
       const news = parseNikkeiEmail(html, text);
 
