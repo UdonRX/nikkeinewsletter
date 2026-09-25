@@ -54,7 +54,7 @@ export async function listNikkeiMessages(accessToken: string) {
   const r = await gmail.users.messages.list({
     userId: "me",
     q: "{from:nikkei-news@mx.nikkei.com from:sokuho-news@mx.nikkei.com}",
-    maxResults: 30,
+    maxResults: 100,
   });
   return r.data.messages ?? [];
 }
