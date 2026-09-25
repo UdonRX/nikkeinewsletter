@@ -6,6 +6,8 @@ export type ParsedNews = {
   url?: string;
   index: number;
   section?: string;
+  imageUrl?: string;
+  imageAlt?: string;
 };
 
 const NOISE =
@@ -28,6 +30,20 @@ function validTitle(s: string) {
 
 function visibleText(el: Element) {
   return clean(el.textContent || "");
+}
+
+function imageFromBlock(el: Element) {
+  const images = Array.from(el.querySelectorAll("img[src]"));
+  for (const img of images) {
+    const src = img.getAttribute("src") || "";
+    const width = Number(img.getAttribute("width") || "0");
+    const height = Number(img.getAttribute("height") || "0");
+    if (!src || src.startsWith("data:") || src.startsWith("cid:")) continue;
+    if ((width > 0 && width < 80) || (height > 0 && height < 50)) continue;
+    if (/spacer|tracking|pixel|logo|icon/i.test(src)) continue;
+    return { src, alt: clean(img.getAttribute("alt") || "") };
+  }
+  return null;
 }
 
 /**
@@ -90,6 +106,9 @@ export function parseNikkeiEmail(
     const sectionCandidate = lines.find((x) => SECTION.test(x));
     if (sectionCandidate) section = sectionCandidate;
 
+    let image = imageFromBlock(block);
+    if (!image && block.parentElement) image = imageFromBlock(block.parentElement);
+
     const body = clean(
       raw
         .replace(title, "")
@@ -109,6 +128,8 @@ export function parseNikkeiEmail(
       body,
       url: href,
       section: section || undefined,
+      imageUrl: image?.src,
+      imageAlt: image?.alt,
     });
   }
 
