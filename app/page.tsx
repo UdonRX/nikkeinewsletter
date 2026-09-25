@@ -150,7 +150,7 @@ export default function Home() {
   const [savedMode, setSavedMode] = useState(false);
   const [swipeX, setSwipeX] = useState(0);
   const [isSwipeAnimating, setIsSwipeAnimating] = useState(false);
-  const [swipeAction, setSwipeAction] = useState<"save" | "remove" | null>(null);
+  const [swipeAction, setSwipeAction] = useState<"save" | "remove" | "home" | null>(null);
   const touchStartXRef = useRef(0);
   const touchStartYRef = useRef(0);
   const touchActiveRef = useRef(false);
