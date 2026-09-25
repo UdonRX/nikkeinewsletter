@@ -47,3 +47,8 @@ html,body{background:#080a0d;color:#f4f6f8}
 .safari-reader h1{color:#f4f6f8}
 .article-content{color:#d8dde3}
 .reader-loading,.reader-unavailable,.loading{color:#8c949e}
+
+
+/* Tinder-style Shorts swipe */
+.short-card{will-change:transform;touch-action:none}
+.short-card.is-swiping-away{pointer-events:none}
