@@ -59,24 +59,34 @@ function trimPaywallHtml(html: string): { html: string; paywalled: boolean } {
     const text = el.textContent?.replace(/\s+/g, " ").trim() || "";
     if (!text || !markers.some((marker) => text.includes(marker))) continue;
 
-    let target: Element = el;
-    while (target.parentElement && target.parentElement !== root && (target.parentElement.textContent?.trim().length || 0) < 500) {
+    let target = el;
+    while (target.parentElement && target.parentElement !== root) {
       target = target.parentElement;
     }
 
+    // 有料会員案内が出た要素以降を全部切る。
     let node: ChildNode | null = target;
     while (node) {
       const next = node.nextSibling;
       node.remove();
       node = next;
     }
-    return {
-      html: root.innerHTML,
-      paywalled: true,
-    };
+    return { html: root.innerHTML, paywalled: true };
   }
 
   return { html: root.innerHTML, paywalled: false };
+}
+
+function trimPaywallText(text: string): { text: string; paywalled: boolean } {
+  const markers = [
+    "この記事は有料会員限定記事です",
+    "この記事は有料会員限定です",
+    "有料会員登録をすることで閲覧できます",
+    "有料会員限定",
+  ];
+  const positions = markers.map((marker) => text.indexOf(marker)).filter((index) => index >= 0);
+  if (!positions.length) return { text, paywalled: false };
+  return { text: text.slice(0, Math.min(...positions)).trim(), paywalled: true };
 }
 
 function sanitizeBodyHtml(html: string, baseUrl: string) {
@@ -101,6 +111,9 @@ function sanitizeBodyHtml(html: string, baseUrl: string) {
     "日経の記事利用サービスについて",
     "企業での記事共有や会議資料への転載・複製",
     "関連企業・業界",
+    "コメントメニュー",
+    "この投稿は現在非表示に設定されています",
+    "Think! の投稿を読む",
   ];
   for (const el of Array.from(doc.querySelectorAll("div,section,aside,li,p"))) {
     const text = el.textContent?.replace(/\s+/g, " ").trim() || "";
@@ -191,13 +204,14 @@ export async function GET(req: NextRequest) {
     const imageUrl = structured?.image || ogImage || "";
 
     if (structured?.body) {
+      const structuredBody = trimPaywallText(structured.body);
       return NextResponse.json({
         title,
         imageUrl: imageUrl ? new URL(imageUrl, finalUrl).toString() : "",
-        contentHtml: textToHtml(structured.body),
+        contentHtml: textToHtml(structuredBody.text),
         url: finalUrl.toString(),
         available: true,
-        paywalled: detectPaywallText(structured.body),
+        paywalled: structuredBody.paywalled,
         source: "nikkei_structured_data",
       });
     }
