@@ -39,6 +39,46 @@ function jsonLdArticle(doc: Document) {
   return null;
 }
 
+function detectPaywallText(text: string) {
+  return /この記事は有料会員限定(?:記事)?(?:です|記事です)?|有料会員登録をすることで閲覧できます|有料会員限定/.test(text);
+}
+
+function trimPaywallHtml(html: string): { html: string; paywalled: boolean } {
+  const dom = new JSDOM("<main>" + html + "</main>");
+  const root = dom.window.document.querySelector("main");
+  if (!root) return { html, paywalled: detectPaywallText(html) };
+
+  const markers = [
+    "この記事は有料会員限定記事です",
+    "この記事は有料会員限定です",
+    "有料会員登録をすることで閲覧できます",
+    "有料会員限定",
+  ];
+
+  for (const el of Array.from(root.querySelectorAll("*"))) {
+    const text = el.textContent?.replace(/\s+/g, " ").trim() || "";
+    if (!text || !markers.some((marker) => text.includes(marker))) continue;
+
+    let target: Element = el;
+    while (target.parentElement && target.parentElement !== root && (target.parentElement.textContent?.trim().length || 0) < 500) {
+      target = target.parentElement;
+    }
+
+    let node: ChildNode | null = target;
+    while (node) {
+      const next = node.nextSibling;
+      node.remove();
+      node = next;
+    }
+    return {
+      html: root.innerHTML,
+      paywalled: true,
+    };
+  }
+
+  return { html: root.innerHTML, paywalled: false };
+}
+
 function sanitizeBodyHtml(html: string, baseUrl: string) {
   const dom = new JSDOM("<main>" + html + "</main>");
   const doc = dom.window.document;
@@ -53,6 +93,19 @@ function sanitizeBodyHtml(html: string, baseUrl: string) {
   ];
 
   for (const el of Array.from(doc.querySelectorAll(removeSelectors.join(",")))) el.remove();
+
+  // Nikkei本文内に混ざるThink!、記事利用サービス、関連企業などの案内も除外する。
+  const unwantedText = [
+    "Think!多様な観点からニュースを考える",
+    "Think! の投稿を読む",
+    "日経の記事利用サービスについて",
+    "企業での記事共有や会議資料への転載・複製",
+    "関連企業・業界",
+  ];
+  for (const el of Array.from(doc.querySelectorAll("div,section,aside,li,p"))) {
+    const text = el.textContent?.replace(/\s+/g, " ").trim() || "";
+    if (text && unwantedText.some((phrase) => text.includes(phrase))) el.remove();
+  }
 
   for (const el of Array.from(doc.querySelectorAll("*"))) {
     for (const attr of Array.from(el.attributes)) {
@@ -109,6 +162,7 @@ export async function GET(req: NextRequest) {
         contentHtml: textToHtml(fallbackBody),
         url: url.toString(),
         available: Boolean(fallbackBody),
+        paywalled: false,
         source: "newsletter_fallback",
       });
     }
@@ -143,6 +197,7 @@ export async function GET(req: NextRequest) {
         contentHtml: textToHtml(structured.body),
         url: finalUrl.toString(),
         available: true,
+        paywalled: detectPaywallText(structured.body),
         source: "nikkei_structured_data",
       });
     }
@@ -157,7 +212,9 @@ export async function GET(req: NextRequest) {
     ].filter(Boolean) as Element[];
 
     const source = candidates.sort((a,b)=>(b.textContent?.trim().length||0)-(a.textContent?.trim().length||0))[0];
-    const contentHtml = source ? sanitizeBodyHtml(source.innerHTML, finalUrl.toString()) : "";
+    const sanitizedHtml = source ? sanitizeBodyHtml(source.innerHTML, finalUrl.toString()) : "";
+    const trimmed = trimPaywallHtml(sanitizedHtml);
+    const contentHtml = trimmed.html;
 
     if (contentHtml && (source?.textContent?.trim().length || 0) >= 120) {
       return NextResponse.json({
@@ -166,6 +223,7 @@ export async function GET(req: NextRequest) {
         contentHtml,
         url: finalUrl.toString(),
         available: true,
+        paywalled: trimmed.paywalled,
         source: "nikkei_article_body",
       });
     }
@@ -176,6 +234,7 @@ export async function GET(req: NextRequest) {
       contentHtml: textToHtml(fallbackBody),
       url: finalUrl.toString(),
       available: Boolean(fallbackBody),
+      paywalled: false,
       source: "newsletter_fallback",
     });
   } catch {
