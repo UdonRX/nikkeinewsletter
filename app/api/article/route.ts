@@ -67,7 +67,7 @@ function trimPaywallHtml(html: string): { html: string; paywalled: boolean } {
     // 有料会員案内が出た要素以降を全部切る。
     let node: ChildNode | null = target;
     while (node) {
-      const next = node.nextSibling;
+      const next: ChildNode | null = node.nextSibling;
       node.remove();
       node = next;
     }
