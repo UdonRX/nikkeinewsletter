@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 
-const ALLOWED=["afpbb.com","newsdig.tbs.co.jp","news.mynavi.jp","itmedia.co.jp","rss.itmedia.co.jp"];
+const ALLOWED=["afpbb.com","fnn.jp","newsdig.tbs.co.jp","news.mynavi.jp","itmedia.co.jp","rss.itmedia.co.jp","nikkei.com"];
 function allowedHost(h:string){const x=h.toLowerCase();return ALLOWED.some(v=>x===v||x.endsWith("."+v));}
 
 export async function GET(req:NextRequest){
