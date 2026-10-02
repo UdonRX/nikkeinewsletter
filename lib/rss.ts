@@ -2,13 +2,14 @@ import { JSDOM } from "jsdom";
 
 export type NewsCategory = "politics"|"economy"|"business"|"international"|"market"|"technology"|"science"|"society"|"life"|"other";
 export type NewsArticle = {
-  id:string; source:"AFPBB"|"TBS NEWS DIG"|"マイナビニュース"|"ITmedia"; title:string; url:string;
+  id:string; source:"AFPBB"|"TBS NEWS DIG"|"マイナビニュース"|"ITmedia"|"日経"; title:string; url:string;
   publishedAt:string; updatedAt?:string; description?:string; content?:string; imageUrl?:string;
   category?:NewsCategory; primaryCategory?:NewsCategory; tags?:string[]; importanceScore?:number;
 };
 type FeedConfig={source:NewsArticle["source"];url:string;categoryHint?:NewsCategory;tags?:string[]};
 
 export const RSS_FEEDS:FeedConfig[]=[
+ {source:"ITmedia",url:"https://www.fnn.jp/list/feed/rss",categoryHint:"society",tags:["FNNプライムオンライン"]},
  {source:"AFPBB",url:"https://feeds.afpbb.com/rss/afpbb/afpbbnews",tags:["国際","外交","海外政治","世界経済","社会","科学","ライフ"]},
  {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/index"},
  {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/techplus/enterprise",categoryHint:"business",tags:["企業IT","企業","IT"]},
