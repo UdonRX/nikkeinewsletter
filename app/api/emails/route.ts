@@ -3,7 +3,7 @@ import { listNikkeiMessages, getMessage, extractMimeBody, header } from "@/lib/g
 import { parseNikkeiEmail } from "@/lib/parser";
 import { refreshAccessToken } from "@/lib/google";
 import { getRefreshToken, setAccessToken } from "@/lib/session";
-import { fetchNewsArticles, daypart, issueDate, toLegacyNews, inferCategory, scoreArticle } from "@/lib/rss";
+import { fetchNewsArticles, fetchGoogleTrendTerms, applyImportanceStars, daypart, issueDate, toLegacyNews, inferCategory, scoreArticle } from "@/lib/rss";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -128,7 +128,8 @@ function dedupeArticles(articles:any[]){
 
 export async function GET(req:NextRequest){
   try{
-    const rssArticles=await fetchNewsArticles();
+    const trendTerms=await fetchGoogleTrendTerms();
+    const rssArticles=await fetchNewsArticles(trendTerms);
     let nikkei:any[]=[];
     let nikkeiEmails:any[]=[];
     const accessToken=await token(req);
@@ -179,6 +180,11 @@ export async function GET(req:NextRequest){
       };
     });
 
+    const allForStars=[...nikkei.flatMap((article:any)=>[article]),...rssEmails.flatMap((email:any)=>email.news.map((news:any)=>news))];
+    const starred=applyImportanceStars(allForStars.map((article:any)=>({id:article.id,source:article.source,title:article.title,url:article.url||"",publishedAt:article.publishedAt||new Date().toISOString(),description:article.description||article.body||"",content:article.content||article.body||"",category:article.category,primaryCategory:article.primaryCategory||article.category,tags:article.tags,importanceScore:article.importanceScore||0})),trendTerms);
+    const starMap=new Map(starred.map((article:any)=>[article.id,article]));
+    for(const email of nikkeiEmails) for(const news of email.news){const scored=starMap.get(news.id);if(scored){news.trendScore=scored.trendScore;news.importanceStars=scored.importanceStars;}}
+    for(const email of rssEmails) for(const news of email.news){const scored=starMap.get(news.id);if(scored){news.trendScore=scored.trendScore;news.importanceStars=scored.importanceStars;}}
     const emails=[...nikkeiEmails,...rssEmails].sort((a,b)=>Number(b.internalDate||0)-Number(a.internalDate||0));
     const displayCounts=Object.fromEntries(["AFPBB","FNN","マイナビニュース","ITmedia","日経"].map(source=>[
       source,

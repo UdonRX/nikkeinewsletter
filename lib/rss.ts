@@ -146,7 +146,7 @@ async function fetchFeed(config:FeedConfig){
   } finally { clearTimeout(timer); }
 }
 
-async function fetchGoogleTrendTerms(){
+export async function fetchGoogleTrendTerms(){
   const url="https://trends.google.com/trending/rss?geo=JP";
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),10000);
@@ -208,14 +208,14 @@ function selectBalancedRssArticles(articles:NewsArticle[],terms:string[]){
   return selected.sort((a,b)=>newsRankScore(b,terms)-newsRankScore(a,terms)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
 }
 
-export async function fetchNewsArticles(){
+export async function fetchNewsArticles(trendTermsInput?:string[]){
   const results=await Promise.allSettled(RSS_FEEDS.map(fetchFeed));
   const failed=results.filter(r=>r.status==="rejected").length;
   const fetched=results.filter(r=>r.status==="fulfilled").reduce((n,r)=>n+r.value.length,0);
   const articles=results.flatMap(r=>r.status==="fulfilled"?r.value:[]).sort((a,b)=>(b.importanceScore||0)-(a.importanceScore||0)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
   const unique:NewsArticle[]=[];
   for(const a of articles){if(unique.some(b=>isDuplicate(b,a)))continue;unique.push(a);}
-  const trendTerms=await fetchGoogleTrendTerms();
+  const trendTerms=trendTermsInput??await fetchGoogleTrendTerms();
   const displayed=selectBalancedRssArticles(unique,trendTerms);
   const sourceCounts=Object.fromEntries((["AFPBB","FNN","マイナビニュース","ITmedia"] as const).map(source=>[source,displayed.filter(a=>a.source===source).length]));
   console.log("[RSS] SUMMARY",{
