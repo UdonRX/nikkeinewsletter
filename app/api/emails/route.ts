@@ -184,7 +184,7 @@ export async function GET(req:NextRequest){
     const starred=applyImportanceStars(allForStars.map((article:any)=>({id:article.id,source:article.source,title:article.title,url:article.url||"",publishedAt:article.publishedAt||new Date().toISOString(),description:article.description||article.body||"",content:article.content||article.body||"",category:article.category,primaryCategory:article.primaryCategory||article.category,tags:article.tags,importanceScore:article.importanceScore||0})),trendTerms);
     const starMap=new Map(starred.map((article:any)=>[article.id,article]));
     for(const email of nikkeiEmails) for(const news of email.news){const scored=starMap.get(news.id);if(scored){news.trendScore=scored.trendScore;news.importanceStars=scored.importanceStars;}}
-    for(const email of rssEmails) for(const news of email.news){const scored=starMap.get(news.id);if(scored){news.trendScore=scored.trendScore;news.importanceStars=scored.importanceStars;}}
+    for(const email of rssEmails) for(const news of email.news as any[]){const scored=starMap.get(news.id);if(scored){news.trendScore=scored.trendScore;news.importanceStars=scored.importanceStars;}}
     const emails=[...nikkeiEmails,...rssEmails].sort((a,b)=>Number(b.internalDate||0)-Number(a.internalDate||0));
     const displayCounts=Object.fromEntries(["AFPBB","FNN","マイナビニュース","ITmedia","日経"].map(source=>[
       source,
