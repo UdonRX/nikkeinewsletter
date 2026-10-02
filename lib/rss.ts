@@ -61,7 +61,8 @@ function extractImage(block:string){const media=attr(block,"media:content","url"
 function parseFeed(xml:string,config:FeedConfig):NewsArticle[]{const blocks=xml.match(/<(?:item|entry)\b[\s\S]*?<\/(?:item|entry)>/gi)||[];return blocks.map((block,i)=>{const title=cleanText(field(block,["title"]))||"無題";const url=decodeHtml(field(block,["link"]))||attr(block,"link","href")||decodeHtml(field(block,["guid"]));const publishedAt=parseDate(field(block,["pubDate","dc:date","published","updated"]));const updated=field(block,["updated"]);const description=cleanText(field(block,["description","summary"]));const content=cleanText(field(block,["content:encoded","content"]));const category=inferCategory(title,description+" "+content,config.categoryHint);const tags=[...new Set([...(config.tags||[]),cleanText(field(block,["category"]))].filter(Boolean))];const imageUrl=extractImage(block);return{id:`${config.source}:${url||normalizeTitle(title)}:${i}`,source:config.source,title,url,publishedAt,updatedAt:updated?parseDate(updated):undefined,description,content,imageUrl:imageUrl||undefined,category,primaryCategory:category,tags,importanceScore:scoreArticle(title,description+" "+content,category)};}).filter(a=>a.title!=="無題"&&/^https?:\/\//i.test(a.url));}
 async function fetchFeed(config:FeedConfig){
   const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),4500);
+  const timeoutMs=15000;
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
   const label=config.source+" "+config.url;
   try{
     console.log("[RSS] START",label);
@@ -75,7 +76,14 @@ async function fetchFeed(config:FeedConfig){
     console.log("[RSS] PARSE",label,{articles:articles.length});
     return articles;
   }catch(error){
-    console.error("[RSS] FAIL",label,error instanceof Error?error.message:String(error));
+    if(error instanceof Error && error.name==="AbortError"){
+      console.error("[RSS] TIMEOUT",label,{timeoutMs});
+    }
+    console.error("[RSS] FAIL",label,{
+      name:error instanceof Error?error.name:"unknown",
+      message:error instanceof Error?error.message:String(error),
+      cause:error instanceof Error&&error.cause?String(error.cause):undefined
+    });
     throw error;
   } finally { clearTimeout(timer); }
 }
@@ -88,7 +96,15 @@ export async function fetchNewsArticles(){
   for(const a of articles){if(unique.some(b=>isDuplicate(b,a)))continue;unique.push(a);}
   const displayed=unique.slice(0,500);
   const sourceCounts=Object.fromEntries((["AFPBB","FNN","マイナビニュース","ITmedia"] as const).map(source=>[source,displayed.filter(a=>a.source===source).length]));
-  console.log("[RSS] SUMMARY",{feeds:RSS_FEEDS.length,failed,parsedArticles:fetched,uniqueArticles:unique.length,displayedArticles:displayed.length,sourceCounts});
+  console.log("[RSS] SUMMARY",{
+    feeds:RSS_FEEDS.length,
+    failed,
+    succeeded:RSS_FEEDS.length-failed,
+    parsedArticles:fetched,
+    uniqueArticles:unique.length,
+    displayedArticles:displayed.length,
+    sourceCounts
+  });
   return displayed;
 }
 export function daypart(iso:string){const h=Number(new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",hour:"2-digit",hour12:false}).format(new Date(iso)));return h>=5&&h<11?"朝刊" as const:h>=11&&h<17?"昼刊" as const:"夕刊" as const;}
