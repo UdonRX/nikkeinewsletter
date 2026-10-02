@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 
 type News = {
   title: string;
@@ -132,8 +131,13 @@ function preloadIssueImages(email: Email, startIndex: number, count = 6) {
 }
 
 export default function Home() {
-  const searchParams = useSearchParams();
-  const gmailConnected = searchParams.get("connected") === "1";
+  const [gmailConnected, setGmailConnected] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setGmailConnected(new URLSearchParams(window.location.search).get("connected") === "1");
+    }
+  }, []);
   const [emails, setEmails] = useState<Email[]>([]);
   const [selectedIssue, setSelectedIssue] = useState<Email | null>(null);
   const [saved, setSaved] = useState<Array<{ emailId: string; newsIndex: number }>>([]);
