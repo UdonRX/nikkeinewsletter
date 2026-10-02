@@ -105,27 +105,13 @@ function latestRegular(emails: Email[]) {
 }
 
 function latestRegularIssues(emails: Email[]) {
-  const regular = emails
-    .filter((email) => email.kind !== "速報" && email.news.length > 0)
-    .slice()
-    .sort((a, b) => Number(b.internalDate || 0) - Number(a.internalDate || 0));
-
-  const seen = new Set<string>();
+  const regular = emails.filter((email) => email.kind !== "速報" && email.news.length > 0)
+    .slice().sort((a,b) => Number(b.internalDate||0)-Number(a.internalDate||0));
   const result: Email[] = [];
-
-  for (const email of regular) {
-    const issueKey = [
-      email.issueDate || dateKey(email.internalDate || email.receivedAt),
-      email.kind,
-    ].join("|");
-
-    if (seen.has(issueKey)) continue;
-    seen.add(issueKey);
-    result.push(email);
-
-    if (result.length >= 3) break;
+  for (const kind of ["朝刊","昼刊","夕刊"] as const) {
+    const issue = regular.find((email) => email.kind === kind);
+    if (issue) result.push(issue);
   }
-
   return result;
 }
 
@@ -428,7 +414,6 @@ export default function Home() {
           </header>
           <article className="safari-reader">
             {reader.data?.imageUrl && <img className="reader-hero" src={reader.data.imageUrl} alt="" />}
-            <div style={{fontSize:"0.78rem",opacity:.65,marginBottom:"8px"}}>{news?.source || "ニュースソース"}</div>
             <h1>{reader.data?.title || news?.title}</h1>
             {readerLoading ? (
               <div className="reader-loading">記事を読み込んでいます…</div>
