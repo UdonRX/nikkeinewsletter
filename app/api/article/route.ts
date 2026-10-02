@@ -10,7 +10,18 @@ function allowedHost(hostname:string){const h=hostname.toLowerCase();return ALLO
 function escapeHtml(v:string){return v.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");}
 function textToHtml(text:string){return text.split(/\n+/).map(x=>x.trim()).filter(Boolean).map(x=>"<p>"+escapeHtml(x)+"</p>").join("");}
 function jsonLdArticle(doc:Document){for(const s of Array.from(doc.querySelectorAll('script[type="application/ld+json"]'))){try{const raw=JSON.parse(s.textContent||"");const list=Array.isArray(raw)?raw:raw["@graph"]||[raw];for(const item of list){if(!item||typeof item!=="object")continue;const type=Array.isArray(item["@type"])?item["@type"].join(" "):String(item["@type"]||"");if(/NewsArticle|Article/i.test(type)&&typeof item.articleBody==="string")return{body:item.articleBody,image:Array.isArray(item.image)?item.image[0]:item.image,headline:typeof item.headline==="string"?item.headline:""};}}catch{}}return null;}
-function sanitize(html:string,baseUrl:string){const doc=new JSDOM("<main>"+html+"</main>").window.document;for(const el of Array.from(doc.querySelectorAll("script,style,noscript,nav,header,footer,aside,form,iframe,video,svg"))){el.remove();}for(const el of Array.from(doc.querySelectorAll("*"))){for(const a of Array.from(el.attributes)){const n=a.name.toLowerCase(),v=a.value;if(n.startsWith("on")||n==="srcdoc"){el.removeAttribute(a.name);continue;}if(n==="href"||n==="src"){if(/^javascript:/i.test(v))el.removeAttribute(a.name);else{try{el.setAttribute(a.name,new URL(v,baseUrl).toString());}catch{el.removeAttribute(a.name);}}}}}return doc.querySelector("main")?.innerHTML||"";}
+function sanitize(html:string,baseUrl:string){
+  const doc=new JSDOM("<main>"+html+"</main>").window.document;
+  for(const el of Array.from(doc.querySelectorAll("script,style,noscript,nav,header,footer,aside,form,iframe,video,svg,figure figcaption,[class*='share'],[class*='social'],[class*='author'],[class*='date'],[class*='time'],[class*='meta'],[class*='related'],[class*='recommend'],[class*='ranking'],[class*='breadcrumb'],[class*='advert'],[id*='share'],[id*='social'],[id*='author'],[id*='date'],[id*='related'],[id*='recommend'],[id*='breadcrumb'],[id*='advert']")){el.remove();}
+  for(const el of Array.from(doc.querySelectorAll("*"))){
+    for(const attr of Array.from(el.attributes)){
+      const n=attr.name.toLowerCase(),v=attr.value;
+      if(n.startsWith("on")||n==="srcdoc"){el.removeAttribute(attr.name);continue;}
+      if(n==="href"||n==="src"){if(/^javascript:/i.test(v))el.removeAttribute(attr.name);else{try{el.setAttribute(attr.name,new URL(v,baseUrl).toString());}catch{el.removeAttribute(attr.name);}}}
+    }
+  }
+  return doc.querySelector("main")?.innerHTML||"";
+}
 function trimPaywall(text:string){const markers=["この記事は有料会員限定","有料会員限定記事","有料会員登録をすることで閲覧できます"];const p=markers.map(x=>text.indexOf(x)).filter(x=>x>=0);return p.length?{text:text.slice(0,Math.min(...p)).trim(),paywalled:true}:{text,paywalled:false};}
 
 export async function GET(req:NextRequest){
