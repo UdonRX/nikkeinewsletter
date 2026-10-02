@@ -52,3 +52,5 @@ html,body{background:#080a0d;color:#f4f6f8}
 /* Tinder-style Shorts swipe */
 .short-card{will-change:transform;touch-action:none}
 .short-card.is-swiping-away{pointer-events:none}
+
+.article-content{overflow-x:hidden;overflow-wrap:anywhere}.article-content *{max-width:100%}.article-content img{max-width:100%;height:auto}.article-content table{display:block;max-width:100%;overflow-x:auto}.article-content a{overflow-wrap:anywhere}
