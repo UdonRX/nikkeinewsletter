@@ -154,7 +154,7 @@ async function fetchGoogleTrendTerms(){
     const r=await fetch(url,{signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0","Accept":"application/rss+xml,application/xml,text/xml,*/*","Accept-Language":"ja-JP,ja;q=0.9"}});
     const xml=await r.text();
     if(!r.ok)throw new Error("HTTP "+r.status);
-    const doc=new JSDOM(xml,"text/xml").window.document;
+    const doc=new JSDOM(xml).window.document;
     const terms=Array.from(doc.querySelectorAll("item > title, entry > title")).map(el=>cleanText(el.textContent||"")).filter(v=>v.length>=2);
     console.log("[TRENDS] SUMMARY",{status:r.status,bytes:xml.length,terms:terms.length,topTerms:terms.slice(0,20)});
     return terms;
