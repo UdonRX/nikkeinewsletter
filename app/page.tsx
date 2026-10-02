@@ -514,6 +514,7 @@ export default function Home() {
                 />
               ) : null}
               <div className="image-placeholder" hidden={Boolean(imageSrc)}><span>N</span></div>
+              <div className="image-source">{short.news.source || short.news.imageAlt || "ニュース"}</div>
             </div>
             <button type="button" className="short-title" onClick={() => openReader(short.email, short.newsIndex)}>
               {short.news.title}
