@@ -407,7 +407,6 @@ export default function Home() {
           <div className="eyebrow">NEWS READER</div>
           <h1>ニュース</h1>
           <p>{error}</p>
-          <a className="btn" href="/api/auth/google">Googleで接続</a>
         </div>
       </main>
     );
@@ -547,7 +546,7 @@ export default function Home() {
   return (
     <main className="app-shell home-shell">
       <header className="home-header">
-        <div className="eyebrow">NIKKEI NEWS MAIL</div>
+        <div className="eyebrow">NEWS READER</div>
         <h1>ニュース</h1>
       </header>
 
