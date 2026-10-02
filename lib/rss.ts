@@ -180,37 +180,10 @@ export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
   const n=ranked.length;
   return ranked.map((entry,i)=>({...entry.article,trendScore:entry.trendScore,importanceStars:n<=1?5:i<Math.ceil(n*.10)?5:i<Math.ceil(n*.25)?4:i<Math.ceil(n*.50)?3:i<Math.ceil(n*.75)?2:1}));
 }
-function selectBalancedRssArticles(articles:NewsArticle[],terms:string[]){
-  const sources=["AFPBB","FNN","マイナビニュース","ITmedia"] as const;
-  const bySource=Object.fromEntries(sources.map(source=>[
-    source,
-    articles.filter(article=>article.source===source).sort((a,b)=>
-      newsRankScore(b,terms)-newsRankScore(a,terms) ||
-      new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime()
-    )
-  ])) as Record<(typeof sources)[number],NewsArticle[]>;
-  // 取得できなかったソースを含めて最小値を取ると、1ソースが0件の瞬間に
-  // 全RSSが0件になる。利用可能なソースだけで均等配分し、取得できたRSSを
-  // Trends一致の有無にかかわらず表示できるようにする。
-  const availableSources=sources.filter(source=>bySource[source].length>0);
-  if(!availableSources.length){
-    console.log("[RSS] BALANCED_SELECTION",{
-      selectedPerSource:Object.fromEntries(sources.map(source=>[source,0])),
-      total:0,
-      trendMatched:0,
-      unavailableSources:sources
-    });
-    return [];
-  }
-  const quota=Math.min(...availableSources.map(source=>bySource[source].length));
-  const selected=availableSources.flatMap(source=>bySource[source].slice(0,quota));
-  console.log("[RSS] BALANCED_SELECTION",{
-    selectedPerSource:Object.fromEntries(sources.map(source=>[source,selected.filter(article=>article.source===source).length])),
-    total:selected.length,
-    trendMatched:selected.filter(article=>trendBoost(article,terms)>0).length,
-    unavailableSources:sources.filter(source=>!availableSources.includes(source))
-  });
-  return selected.sort((a,b)=>newsRankScore(b,terms)-newsRankScore(a,terms)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
+function selectAllRssArticles(articles:NewsArticle[],terms:string[]){
+  const selected=articles.slice().sort((a,b)=>newsRankScore(b,terms)-newsRankScore(a,terms)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
+  console.log("[RSS] ALL_SELECTION",{total:selected.length,trendMatched:selected.filter(a=>trendBoost(a,terms)>0).length});
+  return selected;
 }
 
 export async function fetchNewsArticles(trendTermsInput?:string[]){
@@ -221,7 +194,7 @@ export async function fetchNewsArticles(trendTermsInput?:string[]){
   const unique:NewsArticle[]=[];
   for(const a of articles){if(unique.some(b=>isDuplicate(b,a)))continue;unique.push(a);}
   const trendTerms=trendTermsInput??await fetchGoogleTrendTerms();
-  const displayed=selectBalancedRssArticles(unique,trendTerms);
+  const displayed=selectAllRssArticles(unique,trendTerms);
   const sourceCounts=Object.fromEntries((["AFPBB","FNN","マイナビニュース","ITmedia"] as const).map(source=>[source,displayed.filter(a=>a.source===source).length]));
   console.log("[RSS] SUMMARY",{
     feeds:RSS_FEEDS.length,
@@ -237,4 +210,4 @@ export async function fetchNewsArticles(trendTermsInput?:string[]){
 }
 export function daypart(iso:string){const h=Number(new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",hour:"2-digit",hour12:false}).format(new Date(iso)));return h>=5&&h<11?"朝刊" as const:h>=11&&h<17?"昼刊" as const:"夕刊" as const;}
 export function issueDate(iso:string){const p=new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date(iso));return `${p.find(x=>x.type==="year")?.value||"1970"}-${p.find(x=>x.type==="month")?.value||"01"}-${p.find(x=>x.type==="day")?.value||"01"}`;}
-export function toLegacyNews(a:NewsArticle,index:number){return{title:a.title,body:a.content||a.description||"",url:a.url,index,section:a.category,imageUrl:a.imageUrl,imageAlt:a.source,source:a.source,category:a.primaryCategory,tags:a.tags,importanceScore:a.importanceScore,publishedAt:a.publishedAt};}
+export function toLegacyNews(a:NewsArticle,index:number){return{id:a.id,title:a.title,body:a.content||a.description||"",url:a.url,index,section:a.category,imageUrl:a.imageUrl,imageAlt:a.source,source:a.source,category:a.primaryCategory,tags:a.tags,importanceScore:a.importanceScore,publishedAt:a.publishedAt};}

@@ -1,19 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type News = {
+  id?: string;
   title: string;
   body: string;
   url?: string;
   index: number;
-  section?: string;
   imageUrl?: string;
   imageAlt?: string;
   source?: string;
   category?: string;
   tags?: string[];
   importanceScore?: number;
+  trendScore?: number;
+  importanceStars?: number;
   publishedAt?: string;
 };
 
@@ -31,608 +33,224 @@ type Email = {
 
 type ReaderData = {
   title: string;
-  imageUrl: string;
+  imageUrl?: string;
   contentHtml: string;
   url: string;
   available: boolean;
   paywalled?: boolean;
   source?: string;
-  fetchError?: string;
 };
 
-type ReaderTarget = {
-  emailId: string;
-  newsIndex: number;
-  data?: ReaderData;
-};
-
-function haptic(pattern: number | number[] = 8) {
-  if (typeof navigator !== "undefined" && "vibrate" in navigator) {
-    try {
-      navigator.vibrate(pattern);
-    } catch {}
-  }
-}
-
-function dateKey(value: string | number | Date) {
+function dateKey(value: string) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "";
-  const parts = new Intl.DateTimeFormat("ja-JP", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(d);
-  const y = parts.find((part) => part.type === "year")?.value || "";
-  const m = parts.find((part) => part.type === "month")?.value || "";
-  const day = parts.find((part) => part.type === "day")?.value || "";
-  return y && m && day ? `${y}-${m}-${day}` : "";
+  const p = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d);
+  return `${p.find(x => x.type === "year")?.value}-${p.find(x => x.type === "month")?.value}-${p.find(x => x.type === "day")?.value}`;
 }
 
-function iconFor(kind: Email["kind"]) {
-  if (kind === "朝刊") {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="12" r="4.2" />
-        <path d="M12 2.5v2M12 19.5v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2.5 12h2M19.5 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-      </svg>
-    );
-  }
-  if (kind === "昼刊") {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="12" r="7.2" />
-        <path d="M12 4.8v14.4M4.8 12h14.4" />
-      </svg>
-    );
-  }
-  if (kind === "夕刊") {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M18.6 15.7A8 8 0 0 1 8.3 5.4 8.4 8.4 0 1 0 18.6 15.7Z" />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="7" />
-    </svg>
-  );
+function displayDate(value: string) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "long", day: "numeric", weekday: "short" }).format(d);
 }
 
-function latestRegular(emails: Email[]) {
-  return emails.find((email) => email.kind !== "速報" && email.news.length > 0);
+function timeOf(value?: string) {
+  if (!value) return "--:--";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "--:--";
+  return new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
 }
 
-function latestRegularIssues(emails: Email[]) {
-  // 同じ日・同じ刊のRSSと日経メールを1つの号にまとめる。
-  // 日経メール接続後もRSS側のニュースが隠れないようにする。
-  const regular = emails.filter((email) => email.kind !== "速報" && email.news.length > 0)
-    .slice().sort((a,b) => Number(b.internalDate||0)-Number(a.internalDate||0));
-  const groups = new Map<string, Email[]>();
-
-  for (const email of regular) {
-    const date = email.issueDate || dateKey(email.internalDate || email.receivedAt);
-    const key = `${date}|${email.kind}`;
-    const list = groups.get(key) || [];
-    list.push(email);
-    groups.set(key, list);
-  }
-
-  const result: Email[] = [];
-  for (const kind of ["朝刊","昼刊","夕刊"] as const) {
-    const candidates = [...groups.entries()]
-      .filter(([key]) => key.endsWith(`|${kind}`))
-      .sort((a,b) => Number(b[1][0]?.internalDate||0) - Number(a[1][0]?.internalDate||0));
-
-    const [, issues] = candidates[0] || [];
-    if (!issues?.length) continue;
-
-    const primary = issues[0];
-    const mergedNews = issues.flatMap((email) => email.news);
-    result.push({
-      ...primary,
-      id: `merged:${primary.issueDate || dateKey(primary.internalDate || primary.receivedAt)}|${kind}`,
-      newsCount: mergedNews.length,
-      news: mergedNews,
-      from: [...new Set(issues.map((email) => email.from).filter(Boolean))].join(" / "),
-    });
-  }
-  return result;
+function stars(count = 1) {
+  const n = Math.max(1, Math.min(5, count));
+  return "★".repeat(n) + "☆".repeat(5 - n);
 }
 
-function newsImageSrc(news?: News) {
-  if (news?.imageUrl) return news.imageUrl;
-  return news?.url ? "/api/news-image?url=" + encodeURIComponent(news.url) : "";
-}
-
-function preloadIssueImages(email: Email, startIndex: number, count = 6) {
-  for (let i = Math.max(0, startIndex); i < Math.min(email.news.length, startIndex + count); i++) {
-    const src = newsImageSrc(email.news[i]);
-    if (!src) continue;
-    const image = new Image();
-    image.decoding = "async";
-    image.src = src;
-  }
+function shortSummary(body: string, title: string) {
+  const text = (body || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  if (!text) return title.length > 28 ? title.slice(0, 28) + "…" : title;
+  return text.length > 30 ? text.slice(0, 30) + "…" : text;
 }
 
 export default function Home() {
-  const [gmailConnected, setGmailConnected] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setGmailConnected(new URLSearchParams(window.location.search).get("connected") === "1");
-    }
-  }, []);
   const [emails, setEmails] = useState<Email[]>([]);
-  const [selectedIssue, setSelectedIssue] = useState<Email | null>(null);
-  const [saved, setSaved] = useState<Array<{ emailId: string; newsIndex: number }>>([]);
-  const [reader, setReader] = useState<ReaderTarget | null>(null);
-  const [readerLoading, setReaderLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [saved, setSaved] = useState<Array<{ emailId: string; newsIndex: number }>>([]);
+  const [savedOnly, setSavedOnly] = useState(false);
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [reader, setReader] = useState<{ emailId: string; newsIndex: number; data?: ReaderData } | null>(null);
   const [fontScale, setFontScale] = useState(1);
-  const [shortIndex, setShortIndex] = useState(0);
-  const [savedMode, setSavedMode] = useState(false);
-  const [swipeX, setSwipeX] = useState(0);
-  const [isSwipeAnimating, setIsSwipeAnimating] = useState(false);
-  const [swipeAction, setSwipeAction] = useState<"save" | "remove" | "home" | null>(null);
-  const touchStartXRef = useRef(0);
-  const touchStartYRef = useRef(0);
-  const touchActiveRef = useRef(false);
+  const [shorts, setShorts] = useState<{ items: Array<{ email: Email; news: News; newsIndex: number }>; index: number } | null>(null);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem("nn_saved_news");
       if (raw) setSaved(JSON.parse(raw));
     } catch {}
+    if (typeof window !== "undefined") setGmailConnected(new URLSearchParams(window.location.search).get("connected") === "1");
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem("nn_saved_news", JSON.stringify(saved));
-  }, [saved]);
-
-  // Shortsを開いた瞬間に、現在位置から先の写真を先読みする。
-  // スワイプ後に古い画像が残るのを防ぐため、次の5件＋現在位置をブラウザキャッシュへ入れる。
-  useEffect(() => {
-    if (!selectedIssue || savedMode) return;
-    preloadIssueImages(selectedIssue, shortIndex, 6);
-    if (shortIndex > 0) preloadIssueImages(selectedIssue, shortIndex - 1, 2);
-  }, [selectedIssue, savedMode, shortIndex]);
+  useEffect(() => { localStorage.setItem("nn_saved_news", JSON.stringify(saved)); }, [saved]);
 
   useEffect(() => {
     fetch("/api/emails", { cache: "no-store" })
-      .then(async (r) => {
-        const j = await r.json().catch(() => ({}));
-        if (r.status === 401) throw new Error("ニュースを取得できませんでした。");
-        if (!r.ok) throw new Error(j.error || "ニュースを取得できませんでした");
-        setEmails(j.emails || []);
+      .then(async r => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || "ニュースを取得できませんでした");
+        setEmails(data.emails || []);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "ニュースを取得できませんでした"))
+      .catch(e => setError(e instanceof Error ? e.message : "ニュースを取得できませんでした"))
       .finally(() => setLoading(false));
   }, []);
 
-  const breakingEmail = useMemo(() => emails.find((email) => email.kind === "速報" && email.news.length > 0), [emails]);
-  const latest = useMemo(() => latestRegular(emails), [emails]);
-  const latestIssues = useMemo(() => latestRegularIssues(emails), [emails]);
-  const savedNews = useMemo(() => {
-    return saved
-      .map((item) => {
-        const email = emails.find((candidate) => candidate.id === item.emailId);
-        const news = email?.news[item.newsIndex];
-        return email && news ? { email, news, newsIndex: item.newsIndex } : null;
-      })
-      .filter(Boolean) as Array<{ email: Email; news: News; newsIndex: number }>;
-  }, [emails, saved]);
+  const timeline = useMemo(() => {
+    const rows: Array<{ email: Email; news: News; newsIndex: number }> = [];
+    for (const email of emails) email.news.forEach((news, newsIndex) => rows.push({ email, news, newsIndex }));
+    rows.sort((a, b) => new Date(b.news.publishedAt || b.email.internalDate).getTime() - new Date(a.news.publishedAt || a.email.internalDate).getTime());
+    return rows;
+  }, [emails]);
 
-  useEffect(() => {
-    if (!savedMode) return;
-    for (let i = shortIndex; i < Math.min(savedNews.length, shortIndex + 6); i++) {
-      const src = newsImageSrc(savedNews[i]?.news);
-      if (!src) continue;
-      const image = new Image();
-      image.decoding = "async";
-      image.src = src;
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return timeline.filter(item => {
+      if (savedOnly && !saved.some(s => s.emailId === item.email.id && s.newsIndex === item.newsIndex)) return false;
+      if (!q) return true;
+      return [item.news.title, item.news.body, item.news.source, item.news.category].join(" ").toLowerCase().includes(q);
+    });
+  }, [timeline, query, savedOnly, saved]);
+
+  const groups = useMemo(() => {
+    const map = new Map<string, typeof filtered>();
+    for (const item of filtered) {
+      const key = dateKey(item.news.publishedAt || item.email.internalDate);
+      const list = map.get(key) || [];
+      list.push(item);
+      map.set(key, list);
     }
-  }, [savedMode, shortIndex, savedNews]);
+    return [...map.entries()];
+  }, [filtered]);
 
-  const homeIssues = latestIssues;
-
-  function startIssue(email: Email) {
-    if (!email.news.length) return;
-    haptic(10);
-    setSavedMode(false);
-    setSelectedIssue(email);
-    setShortIndex(0);
-    preloadIssueImages(email, 0, 8);
+  function isSaved(emailId: string, newsIndex: number) {
+    return saved.some(s => s.emailId === emailId && s.newsIndex === newsIndex);
   }
 
-  function startSaved() {
-    if (!savedNews.length) return;
-    haptic(10);
-    setSavedMode(true);
-    setSelectedIssue(null);
-    setShortIndex(0);
-  }
-
-  function closeShorts() {
-    haptic(6);
-    setSelectedIssue(null);
-    setSavedMode(false);
-    setShortIndex(0);
+  function toggleSaved(email: Email, newsIndex: number) {
+    setSaved(current => isSaved(email.id, newsIndex)
+      ? current.filter(s => !(s.emailId === email.id && s.newsIndex === newsIndex))
+      : [...current, { emailId: email.id, newsIndex }]);
   }
 
   async function openReader(email: Email, newsIndex: number) {
     const news = email.news[newsIndex];
     if (!news) return;
-
-    haptic(8);
     setReader({ emailId: email.id, newsIndex });
-    setReaderLoading(true);
     setFontScale(1);
-
     try {
-      const params = new URLSearchParams({
-        url: news.url || "",
-        title: news.title,
-        body: news.body || "",
-      });
+      const params = new URLSearchParams({ url: news.url || "", title: news.title, body: news.body || "" });
       const r = await fetch("/api/article?" + params.toString(), { cache: "no-store" });
       const data = await r.json();
-      if (r.ok) setReader((current) => (current ? { ...current, data } : current));
-    } catch {
-    } finally {
-      setReaderLoading(false);
-    }
+      if (r.ok) setReader(current => current ? { ...current, data } : current);
+    } catch {}
   }
 
-  function saveNews(email: Email, newsIndex: number) {
-    setSaved((current) => {
-      if (current.some((item) => item.emailId === email.id && item.newsIndex === newsIndex)) return current;
-      return [...current, { emailId: email.id, newsIndex }];
-    });
-    haptic(10);
+  function openShorts() {
+    if (filtered.length) setShorts({ items: filtered, index: 0 });
   }
 
-  function moveShort(direction: 1 | -1) {
-    const count = savedMode ? savedNews.length : selectedIssue?.news.length || 0;
-    if (!count) return;
+  if (loading) return <main className="app-shell"><div className="loading">ニュースを読み込んでいます…</div></main>;
 
-    const next = shortIndex + direction;
-    if (next < 0 || next >= count) return;
-
-    haptic(8);
-    setShortIndex(next);
-  }
-
-  function finishHorizontalSwipe(dx: number) {
-    const threshold = 90;
-    if (Math.abs(dx) < threshold || isSwipeAnimating) {
-      setSwipeX(0);
-      setSwipeAction(null);
-      return;
-    }
-
-    // 通常のShorts:
-    //   左 = ホームへ戻る
-    //   右 = 保存して次の記事
-    //
-    // 「あとで読む」:
-    //   左 = ホームへ戻る
-    //   右 = 保存解除して次の記事
-    if (dx < 0) {
-      setSwipeAction("home");
-      setIsSwipeAnimating(true);
-
-      window.setTimeout(() => {
-        setSwipeX(0);
-        setSwipeAction(null);
-        setIsSwipeAnimating(false);
-        closeShorts();
-      }, 230);
-      return;
-    }
-
-    // 通常のShortsの右スワイプは保存して次の記事へ。
-    if (!savedMode) {
-      setSwipeAction("save");
-      setIsSwipeAnimating(true);
-
-      const email = selectedIssue;
-      const index = shortIndex;
-
-      window.setTimeout(() => {
-        if (email) saveNews(email, index);
-
-        setSwipeX(0);
-        setSwipeAction(null);
-        setIsSwipeAnimating(false);
-
-        const count = email?.news.length || 0;
-        if (index < count - 1) {
-          setShortIndex(index + 1);
-        } else {
-          closeShorts();
-        }
-      }, 230);
-      return;
-    }
-
-    // 「あとで読む」では右スワイプで保存解除して次の記事へ。
-    setSwipeAction("remove");
-    setIsSwipeAnimating(true);
-
-    const item = savedNews[shortIndex];
-
-    window.setTimeout(() => {
-      if (item) {
-        setSaved((current) =>
-          current.filter(
-            (savedItem) =>
-              !(savedItem.emailId === item.email.id && savedItem.newsIndex === item.newsIndex),
-          ),
-        );
-      }
-
-      setSwipeX(0);
-      setSwipeAction(null);
-      setIsSwipeAnimating(false);
-
-      const nextLength = Math.max(0, savedNews.length - 1);
-      if (nextLength === 0) {
-        closeShorts();
-      } else if (shortIndex >= nextLength) {
-        setShortIndex(nextLength - 1);
-      } else {
-        setShortIndex(shortIndex);
-      }
-    }, 230);
-  }
-
-  function handleShortSwipe(dx: number, dy: number) {
-    if (Math.abs(dy) > Math.abs(dx)) {
-      if (Math.abs(dy) < 55) {
-        setSwipeX(0);
-        return;
-      }
-      setSwipeX(0);
-      if (dy < 0) moveShort(1);
-      else moveShort(-1);
-      return;
-    }
-
-    finishHorizontalSwipe(dx);
-  }
-
-  function currentShortNews() {
-    if (savedMode) {
-      const item = savedNews[shortIndex];
-      return item ? { email: item.email, news: item.news, newsIndex: item.newsIndex } : null;
-    }
-    if (!selectedIssue) return null;
-    return { email: selectedIssue, news: selectedIssue.news[shortIndex], newsIndex: shortIndex };
-  }
-
-  const short = currentShortNews();
-
-  if (loading) {
-    return <main className="app-shell"><div className="loading">ニュースを読み込んでいます…</div></main>;
-  }
-
-  if (error) {
-    return (
-      <main className="app-shell">
-        <div className="connect-card">
-          <div className="eyebrow">NEWS READER</div>
-          <h1>ニュース</h1>
-          <p>{error}</p>
-        </div>
-      </main>
-    );
-  }
+  if (error) return <main className="app-shell"><section className="error-panel"><div className="eyebrow">NEWS READER</div><h1>ニュース</h1><p>{error}</p></section></main>;
 
   if (reader) {
-    const email = emails.find((item) => item.id === reader.emailId);
+    const email = emails.find(e => e.id === reader.emailId);
     const news = email?.news[reader.newsIndex];
     return (
       <main className="app-shell reader-shell">
         <div className="reader-overlay">
-          <header className="safari-reader-bar">
-            <button type="button" className="reader-back" onClick={() => { haptic(8); setReader(null); }}>‹ <span>戻る</span></button>
-            <div className="reader-controls">
-              <button type="button" onClick={() => setFontScale((v) => Math.max(.9, v - .1))}>A−</button>
-              <span>NEWS READER</span>
-              <button type="button" onClick={() => setFontScale((v) => Math.min(1.3, v + .1))}>A＋</button>
-            </div>
+          <header className="reader-bar">
+            <button onClick={() => setReader(null)}>‹ 戻る</button>
+            <span>NEWS READER</span>
+            <div className="reader-font"><button onClick={() => setFontScale(v => Math.max(.9, v - .1))}>A−</button><button onClick={() => setFontScale(v => Math.min(1.3, v + .1))}>A＋</button></div>
           </header>
-          <article className="safari-reader">
+          <article className="reader-article">
             {reader.data?.imageUrl && <img className="reader-hero" src={reader.data.imageUrl} alt="" />}
+            <div className="reader-source">{reader.data?.source || news?.source || "ニュース"}</div>
             <h1>{reader.data?.title || news?.title}</h1>
-            {readerLoading ? (
-              <div className="reader-loading">記事を読み込んでいます…</div>
-            ) : reader.data?.contentHtml ? (
-              <>
-                <div className="article-content" style={{ fontSize: fontScale + "em" }} dangerouslySetInnerHTML={{ __html: reader.data.contentHtml }} />
-                {reader.data.paywalled && (
-                  <div className="paywall-notice">
-                    <strong>ここから先は有料会員限定</strong>
-                    <p>この記事は有料会員限定記事です。続きは日経の有料会員向けページで読むことができます。</p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="reader-unavailable">
-                <p>{news?.body || "本文を取得できませんでした。"}</p>
-              </div>
-            )}
+            {reader.data?.contentHtml ? <div className="article-content" style={{ fontSize: fontScale + "em" }} dangerouslySetInnerHTML={{ __html: reader.data.contentHtml }} /> : <p className="reader-unavailable">{news?.body || "本文を取得できませんでした。"}</p>}
+            {reader.data?.paywalled && <div className="paywall-notice"><strong>ここから先は有料会員限定</strong><p>続きは日経の有料会員向けページで読むことができます。</p></div>}
           </article>
         </div>
       </main>
     );
   }
 
-  if (short) {
-    const total = savedMode ? savedNews.length : selectedIssue?.news.length || 0;
-    const label = savedMode ? "あとで読む" : short.email.kind;
-    const imageSrc = newsImageSrc(short.news);
-
+  if (shorts) {
+    const item = shorts.items[shorts.index];
     return (
-      <main
-        className="app-shell shorts-shell"
-        onTouchStart={(event) => {
-          touchStartXRef.current = event.changedTouches[0]?.clientX || 0;
-          touchStartYRef.current = event.changedTouches[0]?.clientY || 0;
-          touchActiveRef.current = true;
-          setIsSwipeAnimating(false);
-          setSwipeAction(null);
-        }}
-        onTouchMove={(event) => {
-          if (!touchActiveRef.current || isSwipeAnimating) return;
-          const x = event.changedTouches[0]?.clientX || 0;
-          const y = event.changedTouches[0]?.clientY || 0;
-          const dx = x - touchStartXRef.current;
-          const dy = y - touchStartYRef.current;
-
-          // 縦スワイプ中はカードを左右に動かさない。
-          if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 12) {
-            setSwipeX(0);
-            return;
-          }
-
-          if (Math.abs(dx) > 8) {
-            setSwipeX(dx);
-          }
-        }}
-        onTouchEnd={(event) => {
-          if (!touchActiveRef.current) return;
-          touchActiveRef.current = false;
-          const endX = event.changedTouches[0]?.clientX || 0;
-          const endY = event.changedTouches[0]?.clientY || 0;
-          handleShortSwipe(
-            endX - touchStartXRef.current,
-            endY - touchStartYRef.current,
-          );
-        }}
-      >
-        <div className="shorts-header">
-          <button type="button" className="icon-button" aria-label="ホーム" onClick={closeShorts}>‹</button>
-          <div className="shorts-title">{label}</div>
-          <div className="shorts-count">{shortIndex + 1} / {total}</div>
-        </div>
-        <div className="shorts-progress"><span style={{ width: total ? ((shortIndex + 1) / total) * 100 + "%" : "0%" }} /></div>
-
-        <div className="shorts-stage">
-          <div
-            className={"short-card " + (isSwipeAnimating ? "is-swiping-away" : "")}
-            style={{
-              transform: isSwipeAnimating
-                ? `translate3d(${swipeX >= 0 ? "calc(100vw + 120px)" : "calc(-100vw - 120px)"},0,0) rotate(${swipeX >= 0 ? 10 : -10}deg)`
-                : `translate3d(${swipeX}px,0,0) rotate(${swipeX * 0.035}deg)`,
-              opacity: isSwipeAnimating ? 0 : Math.max(0.55, 1 - Math.abs(swipeX) / 420),
-              transition: isSwipeAnimating
-                ? "transform .23s cubic-bezier(.22,.7,.2,1), opacity .23s ease"
-                : "none",
-            }}
-          >
-            <div className="short-image">
-              {imageSrc ? (
-                <img
-                  src={imageSrc}
-                  alt={short.news.imageAlt || ""}
-                  onError={(event) => {
-                    event.currentTarget.style.display = "none";
-                    const placeholder = event.currentTarget.nextElementSibling as HTMLElement | null;
-                    if (placeholder) placeholder.hidden = false;
-                  }}
-                />
-              ) : null}
-              <div className="image-placeholder" hidden={Boolean(imageSrc)}><span>N</span></div>
-              <div className="image-source">{short.news.source || short.news.imageAlt || "ニュース"}</div>
-            </div>
-            <button type="button" className="short-title" onClick={() => openReader(short.email, short.newsIndex)}>
-              {short.news.title}
-            </button>
-          </div>
-        </div>
+      <main className="app-shell shorts-shell">
+        <header className="shorts-bar">
+          <button onClick={() => setShorts(null)}>‹</button>
+          <strong>ニュース Shorts</strong>
+          <span>{shorts.index + 1} / {shorts.items.length}</span>
+        </header>
+        <div className="short-progress"><span style={{ width: ((shorts.index + 1) / shorts.items.length) * 100 + "%" }} /></div>
+        <article className="short-card">
+          {item.news.imageUrl && <img src={item.news.imageUrl} alt="" />}
+          <div className="short-meta">{item.news.source || item.email.from}<span>{stars(item.news.importanceStars)}</span></div>
+          <h1>{item.news.title}</h1>
+          <p>{shortSummary(item.news.body, item.news.title)}</p>
+          <button className="read-button" onClick={() => openReader(item.email, item.newsIndex)}>記事を読む</button>
+        </article>
+        <div className="short-nav"><button disabled={shorts.index === 0} onClick={() => setShorts({ ...shorts, index: shorts.index - 1 })}>↑ 前へ</button><button disabled={shorts.index === shorts.items.length - 1} onClick={() => setShorts({ ...shorts, index: shorts.index + 1 })}>次へ ↓</button></div>
       </main>
     );
   }
 
-  const homePrimary = breakingEmail?.news[0] || latest?.news[0] || null;
-  const homePrimaryEmail = breakingEmail || latest || null;
-  const homeImage = homePrimary?.url ? "/api/news-image?url=" + encodeURIComponent(homePrimary.url) : "";
-
   return (
-    <main className="app-shell home-shell">
-      <header className="home-header">
-        <div className="eyebrow">NEWS READER</div>
-        <h1>ニュース</h1>
-        <div className="gmail-connect-card">
-          <div>
-            <strong>{gmailConnected ? "Gmail接続済み" : "日経メールをGmailから取得"}</strong>
-            <span>{gmailConnected ? "日経ニュースメールを読み込んでいます" : "Googleアカウントで接続すると日経メールも表示できます"}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => { haptic(8); window.location.href = "/api/auth/google"; }}
-          >
-            {gmailConnected ? "再接続" : "Gmail接続"}
-          </button>
-        </div>
+    <main className="app-shell timeline-shell">
+      <header className="timeline-header">
+        <div><div className="eyebrow">NEWS READER</div><h1>ニュース</h1></div>
+        <button className="gmail-button" onClick={() => { window.location.href = "/api/auth/google"; }}>{gmailConnected ? "Gmail接続済み" : "日経メールを接続"}</button>
       </header>
 
-      <section className={"home-hero " + (breakingEmail ? "is-breaking" : "")}>
-        <div className="home-hero-image">
-          {homeImage ? (
-            <img
-              src={homeImage}
-              alt={homePrimary?.imageAlt || ""}
-              onError={(event) => {
-                event.currentTarget.style.display = "none";
-                const placeholder = event.currentTarget.nextElementSibling as HTMLElement | null;
-                if (placeholder) placeholder.hidden = false;
-              }}
-            />
-          ) : null}
-          <div className="image-placeholder" hidden={Boolean(homeImage)}><span>N</span></div>
+      <div className="timeline-tools">
+        <div className="search-wrap"><span>⌕</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="ニュースを検索" /></div>
+        <div className="tool-actions">
+          <button className={savedOnly ? "active" : ""} onClick={() => setSavedOnly(v => !v)}>保存 {saved.length}</button>
+          <button onClick={openShorts}>Shorts</button>
         </div>
-        <div className="home-hero-meta">{breakingEmail ? "⚡ 速報" : "TODAY"}</div>
-        <button
-          type="button"
-          className="home-hero-title"
-          onClick={() => homePrimaryEmail && openReader(homePrimaryEmail, 0)}
-          disabled={!homePrimaryEmail || !homePrimary}
-        >
-          {homePrimary?.title || "ニュースメールを待っています"}
-        </button>
+      </div>
+
+      <div className="timeline-count">{filtered.length.toLocaleString("ja-JP")} 件</div>
+
+      <section className="timeline-list">
+        {groups.map(([key, items]) => (
+          <div className="timeline-day" key={key}>
+            <div className="timeline-date-heading">{displayDate(items[0].news.publishedAt || items[0].email.internalDate)}</div>
+            {items.map(({ email, news, newsIndex }) => {
+              const starCount = news.importanceStars || 1;
+              return (
+                <article className={"timeline-item stars-" + starCount} key={(news.id || email.id) + ":" + newsIndex}>
+                  <time>{timeOf(news.publishedAt || email.internalDate)}</time>
+                  <div className="timeline-rail"><span /></div>
+                  <button className="timeline-title" onClick={() => openReader(email, newsIndex)}>{news.title}</button>
+                  <div className="timeline-detail">
+                    <div className="timeline-summary">{shortSummary(news.body, news.title)}</div>
+                    <div className="timeline-source">{news.source || email.from}</div>
+                    <div className="timeline-stars" aria-label={"重要度 " + starCount + " / 5"}>{stars(starCount)}</div>
+                  </div>
+                  <button className={"save-button " + (isSaved(email.id, newsIndex) ? "saved" : "")} aria-label="保存" onClick={() => toggleSaved(email, newsIndex)}>{isSaved(email.id, newsIndex) ? "♥" : "♡"}</button>
+                </article>
+              );
+            })}
+          </div>
+        ))}
+        {!filtered.length && <div className="empty-state">該当するニュースがありません。</div>}
       </section>
 
-      <nav className="issue-nav" aria-label="ニュース刊">
-        {homeIssues.map((email) => (
-          <button
-            type="button"
-            className="issue-icon"
-            key={email.id}
-            aria-label={email.kind}
-            onClick={() => startIssue(email)}
-          >
-            <span className="issue-symbol">{iconFor(email.kind)}</span>
-            <span className="issue-label">{email.kind}</span>
-            <span className="issue-count">{email.news.length}</span>
-          </button>
-        ))}
-        <button
-          type="button"
-          className={"issue-icon saved-icon " + (!savedNews.length ? "is-empty" : "")}
-          aria-label="あとで読む"
-          onClick={startSaved}
-          disabled={!savedNews.length}
-        >
-          <span className="issue-symbol">▱</span>
-          <span className="issue-label">保存</span>
-          <span className="issue-count">{savedNews.length}</span>
-        </button>
-      </nav>
+      <footer className="timeline-footer">AFPBB · FNN · マイナビニュース · ITmedia · 日経メール</footer>
     </main>
   );
 }
