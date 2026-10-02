@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 type News = {
   title: string;
@@ -131,6 +132,8 @@ function preloadIssueImages(email: Email, startIndex: number, count = 6) {
 }
 
 export default function Home() {
+  const searchParams = useSearchParams();
+  const gmailConnected = searchParams.get("connected") === "1";
   const [emails, setEmails] = useState<Email[]>([]);
   const [selectedIssue, setSelectedIssue] = useState<Email | null>(null);
   const [saved, setSaved] = useState<Array<{ emailId: string; newsIndex: number }>>([]);
@@ -534,6 +537,18 @@ export default function Home() {
       <header className="home-header">
         <div className="eyebrow">NEWS READER</div>
         <h1>ニュース</h1>
+        <div className="gmail-connect-card">
+          <div>
+            <strong>{gmailConnected ? "Gmail接続済み" : "日経メールをGmailから取得"}</strong>
+            <span>{gmailConnected ? "日経ニュースメールを読み込んでいます" : "Googleアカウントで接続すると日経メールも表示できます"}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => { haptic(8); window.location.href = "/api/auth/google"; }}
+          >
+            {gmailConnected ? "再接続" : "Gmail接続"}
+          </button>
+        </div>
       </header>
 
       <section className={"home-hero " + (breakingEmail ? "is-breaking" : "")}>
