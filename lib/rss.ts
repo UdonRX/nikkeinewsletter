@@ -61,7 +61,7 @@ async function fetchFeed(config:FeedConfig){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),4500);
   try{
-    const r=await fetch(config.url,{cache:"no-store",signal:controller.signal,headers:{"User-Agent":"NikkeiNewsReader/1.0 RSS reader","Accept":"application/rss+xml, application/xml, text/xml, */*"}});
+    const r=await fetch(config.url,{next:{revalidate:60},signal:controller.signal,headers:{"User-Agent":"NikkeiNewsReader/1.0 RSS reader","Accept":"application/rss+xml, application/xml, text/xml, */*"}});
     if(!r.ok)throw new Error(config.source+" RSS "+r.status);
     return parseFeed(await r.text(),config);
   } finally { clearTimeout(timer); }
