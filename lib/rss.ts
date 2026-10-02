@@ -46,9 +46,9 @@ const IMPORTANCE_RULES:Array<[number,string[]]>=[
 ];
 
 function decodeHtml(v:string){const doc=new JSDOM("<body></body>").window.document;const e=doc.createElement("textarea");e.innerHTML=v||"";return e.value;}
-function cleanText(v:string){return decodeHtml(v).replace(/<!\\[CDATA\\[|\\]\\]>/g,"").replace(/<script[\\s\\S]*?<\\/script>/gi," ").replace(/<style[\\s\\S]*?<\\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/\\s+/g," ").trim();}
-function field(block:string,names:string[]){for(const name of names){const re=new RegExp("<"+name.replace(":","\\\\:")+"(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)</"+name.replace(":","\\\\:")+">","i");const m=block.match(re);if(m?.[1])return m[1].trim();}return "";}
-function attr(block:string,tag:string,name:string){return block.match(new RegExp("<"+tag+"\\\\b[^>]*\\\\b"+name+"=[\\"']([^\\"']+)[\\"'][^>]*>","i"))?.[1]||"";}
+function cleanText(v:string){return decodeHtml(v).replace(/<!\[CDATA\[|\]\]>/g,"").replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();}
+function field(block:string,names:string[]){for(const name of names){const escapedName=name.replace(":","\\:");const re=new RegExp("<"+escapedName+"(?:\\s[^>]*)?>([\\s\\S]*?)</"+escapedName+">","i");const m=block.match(re);if(m?.[1])return m[1].trim();}return "";}
+function attr(block:string,tag:string,name:string){return block.match(new RegExp("<"+tag+"\\b[^>]*\\b"+name+"=[\\"']([^\\"']+)[\\"'][^>]*>","i"))?.[1]||"";}
 function parseDate(v:string){const d=new Date(cleanText(v));return Number.isNaN(d.getTime())?new Date().toISOString():d.toISOString();}
 export function inferCategory(title:string,description:string,hint?:NewsCategory){const text=title+" "+description;let best:NewsCategory=hint||"other";let score=hint?1:0;for(const [cat,words] of CATEGORY_RULES){const hits=words.reduce((n,w)=>n+(text.includes(w)?1:0),0);if(hits>score){best=cat;score=hits;}}return best;}
 export function scoreArticle(title:string,description:string,category:NewsCategory){const text=title+" "+description;let score=category==="other"?0:1;for(const [points,words] of IMPORTANCE_RULES)for(const w of words)if(text.includes(w))score+=points;return Math.max(-2,Math.min(15,score));}
