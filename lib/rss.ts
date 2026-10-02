@@ -59,6 +59,50 @@ function tokens(t:string){return new Set(t.toLowerCase().split(/[^0-9a-zA-Z一-�
 function isDuplicate(a:NewsArticle,b:NewsArticle){if(a.url===b.url)return true;const na=normalizeTitle(a.title),nb=normalizeTitle(b.title);if(na&&nb&&(na===nb||na.includes(nb)||nb.includes(na)))return true;const ta=tokens(a.title),tb=tokens(b.title);if(!ta.size||!tb.size)return false;const common=[...ta].filter(t=>tb.has(t)).length;return common/Math.min(ta.size,tb.size)>=.72&&Math.abs(new Date(a.publishedAt).getTime()-new Date(b.publishedAt).getTime())<=12*60*60*1000;}
 function extractImage(block:string){const media=attr(block,"media:content","url")||attr(block,"media:thumbnail","url")||attr(block,"enclosure","url");if(media)return decodeHtml(media);const encoded=field(block,["content:encoded"]);return encoded.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["']/i)?.[1]||"";}
 function parseFeed(xml:string,config:FeedConfig):NewsArticle[]{const blocks=xml.match(/<(?:item|entry)\b[\s\S]*?<\/(?:item|entry)>/gi)||[];return blocks.map((block,i)=>{const title=cleanText(field(block,["title"]))||"無題";const url=decodeHtml(field(block,["link"]))||attr(block,"link","href")||decodeHtml(field(block,["guid"]));const publishedAt=parseDate(field(block,["pubDate","dc:date","published","updated"]));const updated=field(block,["updated"]);const description=cleanText(field(block,["description","summary"]));const content=cleanText(field(block,["content:encoded","content"]));const category=inferCategory(title,description+" "+content,config.categoryHint);const tags=[...new Set([...(config.tags||[]),cleanText(field(block,["category"]))].filter(Boolean))];const imageUrl=extractImage(block);return{id:`${config.source}:${url||normalizeTitle(title)}:${i}`,source:config.source,title,url,publishedAt,updatedAt:updated?parseDate(updated):undefined,description,content,imageUrl:imageUrl||undefined,category,primaryCategory:category,tags,importanceScore:scoreArticle(title,description+" "+content,category)};}).filter(a=>a.title!=="無題"&&/^https?:\/\//i.test(a.url));}
+async function fetchHtmlFallback(config:FeedConfig,fallbackUrl:string){
+  const controller=new AbortController();
+  const timeoutMs=15000;
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    console.log("[RSS] FALLBACK_START",config.source,fallbackUrl);
+    const r=await fetch(fallbackUrl,{signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1","Accept":"text/html,application/xhtml+xml","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"}});
+    const html=await r.text();
+    console.log("[RSS] FALLBACK_HTTP",config.source,{status:r.status,ok:r.ok,contentType:r.headers.get("content-type")||"",bytes:html.length});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const doc=new JSDOM(html).window.document;
+    const articles:NewsArticle[]=[];
+    const seen=new Set<string>();
+    for(const a of Array.from(doc.querySelectorAll("a[href]"))){
+      const href=(a.getAttribute("href")||"").trim();
+      const title=cleanText(a.textContent||"");
+      if(!title||title.length<8||!href)continue;
+      const url=new URL(href,fallbackUrl).toString();
+      if(!/^https?:\/\//i.test(url)||seen.has(url))continue;
+      if(config.source==="FNN"&&!/\/articles\//i.test(url))continue;
+      if(config.source==="AFPBB"&&!/\/articles\/-\//i.test(url))continue;
+      seen.add(url);
+      const category=inferCategory(title,"",config.categoryHint);
+      articles.push({
+        id:config.source+":"+url,
+        source:config.source,
+        title,
+        url,
+        publishedAt:new Date().toISOString(),
+        description:"",
+        content:"",
+        category,
+        primaryCategory:category,
+        tags:config.tags,
+        importanceScore:scoreArticle(title,"",category)
+      });
+      if(articles.length>=80)break;
+    }
+    console.log("[RSS] FALLBACK_PARSE",config.source,{articles:articles.length});
+    return articles;
+  }finally{
+    clearTimeout(timer);
+  }
+}
 async function fetchFeed(config:FeedConfig){
   const controller=new AbortController();
   const timeoutMs=15000;
@@ -84,6 +128,20 @@ async function fetchFeed(config:FeedConfig){
       message:error instanceof Error?error.message:String(error),
       cause:error instanceof Error&&error.cause?String(error.cause):undefined
     });
+    if(config.source==="AFPBB"){
+      try{
+        return await fetchHtmlFallback(config,"https://www.afpbb.com/list/latest");
+      }catch(fallbackError){
+        console.error("[RSS] FALLBACK_FAIL",config.source,{message:fallbackError instanceof Error?fallbackError.message:String(fallbackError)});
+      }
+    }
+    if(config.source==="FNN"){
+      try{
+        return await fetchHtmlFallback(config,"https://www.fnn.jp/list/latest?device=smartphone");
+      }catch(fallbackError){
+        console.error("[RSS] FALLBACK_FAIL",config.source,{message:fallbackError instanceof Error?fallbackError.message:String(fallbackError)});
+      }
+    }
     throw error;
   } finally { clearTimeout(timer); }
 }
