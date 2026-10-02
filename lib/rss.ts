@@ -175,6 +175,11 @@ function newsRankScore(article:NewsArticle,terms:string[]){
   const freshness=Math.max(0,8-Math.min(8,ageHours/6));
   return (article.importanceScore||0)+trendBoost(article,terms)+freshness;
 }
+export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
+  const ranked=articles.map(article=>({article,score:newsRankScore(article,terms),trendScore:trendBoost(article,terms)})).sort((a,b)=>b.score-a.score);
+  const n=ranked.length;
+  return ranked.map((entry,i)=>({...entry.article,trendScore:entry.trendScore,importanceStars:n<=1?5:i<Math.ceil(n*.10)?5:i<Math.ceil(n*.25)?4:i<Math.ceil(n*.50)?3:i<Math.ceil(n*.75)?2:1}));
+}
 function selectBalancedRssArticles(articles:NewsArticle[],terms:string[]){
   const sources=["AFPBB","FNN","マイナビニュース","ITmedia"] as const;
   const bySource=Object.fromEntries(sources.map(source=>[
