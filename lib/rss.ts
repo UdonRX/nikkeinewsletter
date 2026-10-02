@@ -48,17 +48,17 @@ const IMPORTANCE_RULES:Array<[number,string[]]>=[
 ];
 
 function decodeHtml(v:string){const doc=new JSDOM("<body></body>").window.document;const e=doc.createElement("textarea");e.innerHTML=v||"";return e.value;}
-function cleanText(v:string){return decodeHtml(v).replace(/<!\[CDATA\[|\]\]>/g,"").replace(/<script[[\s\S][\s\S]]*?<\/script>/gi," ").replace(/<style[[\s\S][\s\S]]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/[\s\S]+/g," ").trim();}
-function field(block:string,names:string[]){for(const name of names){const escapedName=name.replace(":","[\s\S]:");const re=new RegExp("<"+escapedName+"(?:[\s\S][^>]*)?>([[\s\S][\s\S]S]*?)</"+escapedName+">","i");const m=block.match(re);if(m?.[1])return m[1].trim();}return "";}
-function attr(block:string,tag:string,name:string){const re=new RegExp("<"+tag+"\b[^>]*\b"+name+"=[\"']([^\"']+)[\"'][^>]*>","i");return block.match(re)?.[1]||"";}
+function cleanText(v:string){return decodeHtml(v).replace(/<!\[CDATA\[|\]\]>/g,"").replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();}
+function field(block:string,names:string[]){for(const name of names){const escapedName=name.replace(":","\\:");const re=new RegExp("<"+escapedName+"(?:\\s[^>]*)?>([\\s\\S]*?)</"+escapedName+">","i");const m=block.match(re);if(m?.[1])return m[1].trim();}return "";}
+function attr(block:string,tag:string,name:string){const re=new RegExp("<"+tag+"\\b[^>]*\\b"+name+"=[\"']([^\"']+)[\"'][^>]*>","i");return block.match(re)?.[1]||"";}
 function parseDate(v:string){const d=new Date(cleanText(v));return Number.isNaN(d.getTime())?new Date().toISOString():d.toISOString();}
 export function inferCategory(title:string,description:string,hint?:NewsCategory){const text=title+" "+description;let best:NewsCategory=hint||"other";let score=hint?1:0;for(const [cat,words] of CATEGORY_RULES){const hits=words.reduce((n,w)=>n+(text.includes(w)?1:0),0);if(hits>score){best=cat;score=hits;}}return best;}
 export function scoreArticle(title:string,description:string,category:NewsCategory){const text=title+" "+description;let score=category==="other"?0:1;for(const [points,words] of IMPORTANCE_RULES)for(const w of words)if(text.includes(w))score+=points;return Math.max(-2,Math.min(15,score));}
-function normalizeTitle(t:string){return t.toLowerCase().replace(/【[^】]*】|\[[^\]]*\]|「[^」]*」/g,"").replace(/[\s\S]+/g,"").replace(/[「」『』【】（）()［］\[\]・:：、,.，．!！?？"'”’]/g,"");}
+function normalizeTitle(t:string){return t.toLowerCase().replace(/【[^】]*】|\[[^\]]*\]|「[^」]*」/g,"").replace(/\s+/g,"").replace(/[「」『』【】（）()［］\[\]・:：、,.，．!！?？"'”’]/g,"");}
 function tokens(t:string){return new Set(t.toLowerCase().split(/[^0-9a-zA-Z一-龥ぁ-んァ-ヶー]+/).map(v=>v.trim()).filter(v=>v.length>=2));}
 function isDuplicate(a:NewsArticle,b:NewsArticle){if(a.url===b.url)return true;const na=normalizeTitle(a.title),nb=normalizeTitle(b.title);if(na&&nb&&(na===nb||na.includes(nb)||nb.includes(na)))return true;const ta=tokens(a.title),tb=tokens(b.title);if(!ta.size||!tb.size)return false;const common=[...ta].filter(t=>tb.has(t)).length;return common/Math.min(ta.size,tb.size)>=.72&&Math.abs(new Date(a.publishedAt).getTime()-new Date(b.publishedAt).getTime())<=12*60*60*1000;}
 function extractImage(block:string){const media=attr(block,"media:content","url")||attr(block,"media:thumbnail","url")||attr(block,"enclosure","url");if(media)return decodeHtml(media);const encoded=field(block,["content:encoded"]);return encoded.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["']/i)?.[1]||"";}
-function parseFeed(xml:string,config:FeedConfig):NewsArticle[]{const blocks=xml.match(/<(?:item|entry)\\b[\\s\\S]*?<\\\/(?:item|entry)>/gi)||[];
+function parseFeed(xml:string,config:FeedConfig):NewsArticle[]{const blocks=xml.match(/<(?:item|entry)\b[\s\S]*?<\/(?:item|entry)>/gi)||[];return blocks.map((block,i)=>{const title=cleanText(field(block,["title"]))||"無題";const url=decodeHtml(field(block,["link"]))||attr(block,"link","href")||decodeHtml(field(block,["guid"]));const publishedAt=parseDate(field(block,["pubDate","dc:date","published","updated"]));const updated=field(block,["updated"]);const description=cleanText(field(block,["description","summary"]));const content=cleanText(field(block,["content:encoded","content"]));const category=inferCategory(title,description+" "+content,config.categoryHint);const tags=[...new Set([...(config.tags||[]),cleanText(field(block,["category"]))].filter(Boolean))];const imageUrl=extractImage(block);return{id:`${config.source}:${url||normalizeTitle(title)}:${i}`,source:config.source,title,url,publishedAt,updatedAt:updated?parseDate(updated):undefined,description,content,imageUrl:imageUrl||undefined,category,primaryCategory:category,tags,importanceScore:scoreArticle(title,description+" "+content,category)};}).filter(a=>a.title!=="無題"&&/^https?:\/\//i.test(a.url));}
 async function fetchHtmlFallback(config:FeedConfig,fallbackUrl:string){
   const controller=new AbortController();
   const timeoutMs=15000;
@@ -145,6 +145,7 @@ async function fetchFeed(config:FeedConfig){
     throw error;
   } finally { clearTimeout(timer); }
 }
+
 async function fetchGoogleTrendTerms(){
   const url="https://trends.google.com/trending/rss?geo=JP";
   const controller=new AbortController();
@@ -160,29 +161,21 @@ async function fetchGoogleTrendTerms(){
   }catch(error){
     console.warn("[TRENDS] FAIL",{message:error instanceof Error?error.message:String(error)});
     return [];
-  }finally{
-    clearTimeout(timer);
-  }
+  }finally{ clearTimeout(timer); }
 }
-
 function trendBoost(article:NewsArticle,terms:string[]){
   if(!terms.length)return 0;
   const text=(article.title+" "+(article.description||"")).toLowerCase();
   let hits=0;
-  for(const term of terms){
-    const t=term.toLowerCase().trim();
-    if(t&&text.includes(t))hits++;
-  }
+  for(const term of terms){const t=term.toLowerCase().trim();if(t&&text.includes(t))hits++;}
   return Math.min(12,hits*6);
 }
-
 function newsRankScore(article:NewsArticle,terms:string[]){
   const ageHours=Math.max(0,(Date.now()-new Date(article.publishedAt).getTime())/3600000);
   const freshness=Math.max(0,8-Math.min(8,ageHours/6));
   return (article.importanceScore||0)+trendBoost(article,terms)+freshness;
 }
-
-function selectBalancedRssArticles(articles:NewsArticle[],terms:string[],quota?:number){
+function selectBalancedRssArticles(articles:NewsArticle[],terms:string[]){
   const sources=["AFPBB","FNN","マイナビニュース","ITmedia"] as const;
   const bySource=Object.fromEntries(sources.map(source=>[
     source,
@@ -191,19 +184,14 @@ function selectBalancedRssArticles(articles:NewsArticle[],terms:string[],quota?:
       new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime()
     )
   ])) as Record<(typeof sources)[number],NewsArticle[]>;
-  const available=sources.map(source=>bySource[source].length).filter(Boolean);
-  const balancedQuota=quota??(available.length?Math.min(...available):0);
-  const selected=sources.flatMap(source=>bySource[source].slice(0,balancedQuota));
+  const quota=Math.min(...sources.map(source=>bySource[source].length));
+  const selected=sources.flatMap(source=>bySource[source].slice(0,quota));
   console.log("[RSS] BALANCED_SELECTION",{
-    requestedQuota:quota??"minimum available per source",
-    selectedPerSource:Object.fromEntries(sources.map(source=>[source,bySource[source].slice(0,balancedQuota).length])),
+    selectedPerSource:Object.fromEntries(sources.map(source=>[source,bySource[source].slice(0,quota).length])),
     total:selected.length,
     trendMatched:selected.filter(article=>trendBoost(article,terms)>0).length
   });
-  return selected.sort((a,b)=>
-    newsRankScore(b,terms)-newsRankScore(a,terms) ||
-    new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime()
-  );
+  return selected.sort((a,b)=>newsRankScore(b,terms)-newsRankScore(a,terms)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
 }
 
 export async function fetchNewsArticles(){
