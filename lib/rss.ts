@@ -62,13 +62,35 @@ function parseFeed(xml:string,config:FeedConfig):NewsArticle[]{const blocks=xml.
 async function fetchFeed(config:FeedConfig){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),4500);
+  const label=config.source+" "+config.url;
   try{
-    const r=await fetch(config.url,{next:{revalidate:60},signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1","Accept":"application/rss+xml, application/xml, text/xml, */*","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"}});
-    if(!r.ok)throw new Error(config.source+" RSS "+r.status);
-    return parseFeed(await r.text(),config);
+    console.log("[RSS] START",label);
+    const r=await fetch(config.url,{next:{revalidate:60},signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1","Accept":"application/rss+xml, application/xml, text/xml, */*","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"}});
+    const contentType=r.headers.get("content-type")||"";
+    const xml=await r.text();
+    console.log("[RSS] HTTP",label,{status:r.status,ok:r.ok,contentType,bytes:xml.length});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    if(!/<(?:rss|feed|rdf:RDF)\b/i.test(xml))throw new Error("XML root not recognized");
+    const articles=parseFeed(xml,config);
+    console.log("[RSS] PARSE",label,{articles:articles.length});
+    return articles;
+  }catch(error){
+    console.error("[RSS] FAIL",label,error instanceof Error?error.message:String(error));
+    throw error;
   } finally { clearTimeout(timer); }
 }
-export async function fetchNewsArticles(){const results=await Promise.allSettled(RSS_FEEDS.map(fetchFeed));const articles=results.flatMap(r=>r.status==="fulfilled"?r.value:[]).sort((a,b)=>(b.importanceScore||0)-(a.importanceScore||0)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());const unique:NewsArticle[]=[];for(const a of articles){if(unique.some(b=>isDuplicate(b,a)))continue;unique.push(a);}return unique.slice(0,500);}
+export async function fetchNewsArticles(){
+  const results=await Promise.allSettled(RSS_FEEDS.map(fetchFeed));
+  const failed=results.filter(r=>r.status==="rejected").length;
+  const fetched=results.filter(r=>r.status==="fulfilled").reduce((n,r)=>n+r.value.length,0);
+  const articles=results.flatMap(r=>r.status==="fulfilled"?r.value:[]).sort((a,b)=>(b.importanceScore||0)-(a.importanceScore||0)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
+  const unique:NewsArticle[]=[];
+  for(const a of articles){if(unique.some(b=>isDuplicate(b,a)))continue;unique.push(a);}
+  const displayed=unique.slice(0,500);
+  const sourceCounts=Object.fromEntries((["AFPBB","FNN","マイナビニュース","ITmedia"] as const).map(source=>[source,displayed.filter(a=>a.source===source).length]));
+  console.log("[RSS] SUMMARY",{feeds:RSS_FEEDS.length,failed,parsedArticles:fetched,uniqueArticles:unique.length,displayedArticles:displayed.length,sourceCounts});
+  return displayed;
+}
 export function daypart(iso:string){const h=Number(new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",hour:"2-digit",hour12:false}).format(new Date(iso)));return h>=5&&h<11?"朝刊" as const:h>=11&&h<17?"昼刊" as const:"夕刊" as const;}
 export function issueDate(iso:string){const p=new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date(iso));return `${p.find(x=>x.type==="year")?.value||"1970"}-${p.find(x=>x.type==="month")?.value||"01"}-${p.find(x=>x.type==="day")?.value||"01"}`;}
 export function toLegacyNews(a:NewsArticle,index:number){return{title:a.title,body:a.content||a.description||"",url:a.url,index,section:a.category,imageUrl:a.imageUrl,imageAlt:a.source,source:a.source,category:a.primaryCategory,tags:a.tags,importanceScore:a.importanceScore,publishedAt:a.publishedAt};}

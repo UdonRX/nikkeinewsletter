@@ -70,13 +70,13 @@ function parseNikkeiNews(html:string,text:string,mailId:string,sourceIndex:numbe
 }
 
 async function getNikkeiNews(accessToken:string){
+  console.log("[GMAIL] CONNECTED access token available");
   const ids=await listNikkeiMessages(accessToken);
-  const emails:any[]=[];
-  const articles:any[]=[];
+  console.log("[GMAIL] MESSAGE_COUNT",ids.length);
+  const emails:any[]=[]; const articles:any[]=[];
   for(const m of ids.slice(0,30)){
     const full=await getMessage(accessToken,m.id!);
-    const from=header(full,"From");
-    const sender=from.toLowerCase();
+    const from=header(full,"From"); const sender=from.toLowerCase();
     const dateHeader=header(full,"Date")??"";
     const {html,text}=await extractMimeBody(accessToken,m.id!,full.payload);
     const contentForEdition=html||text||"";
@@ -84,13 +84,11 @@ async function getNikkeiNews(accessToken:string){
     const publishedAt=full.internalDate ? new Date(Number(full.internalDate)).toISOString() : new Date(dateHeader).toISOString();
     const kind=sender.includes("sokuho-news@mx.nikkei.com")?"速報":edition.kind;
     const news=parseNikkeiEmail(html,text);
-    emails.push({
-      id:m.id,threadId:m.threadId,from,kind,subject:header(full,"Subject"),
-      receivedAt:dateHeader,internalDate:full.internalDate||"",issueDate:edition.issueDate,
-      snippet:full.snippet||"",newsCount:news.length,news,
-    });
+    console.log("[GMAIL] MESSAGE",{id:m.id,from,kind,subject:header(full,"Subject"),parsedArticles:news.length,hasHtml:Boolean(html),hasText:Boolean(text)});
+    emails.push({id:m.id,threadId:m.threadId,from,kind,subject:header(full,"Subject"),receivedAt:dateHeader,internalDate:full.internalDate||"",issueDate:edition.issueDate,snippet:full.snippet||"",newsCount:news.length,news});
     articles.push(...parseNikkeiNews(html,text,m.id!,articles.length,publishedAt));
   }
+  console.log("[GMAIL] SUMMARY",{messages:ids.length,processed:Math.min(ids.length,30),emails:emails.length,parsedArticles:articles.length});
   return {emails,articles};
 }
 
@@ -114,6 +112,7 @@ export async function GET(req:NextRequest){
     let nikkei:any[]=[];
     let nikkeiEmails:any[]=[];
     const accessToken=await token(req);
+    console.log("[GMAIL] STATUS",accessToken?"connected":"not_connected");
     if(accessToken){
       try {
         const result=await getNikkeiNews(accessToken);
@@ -154,6 +153,11 @@ export async function GET(req:NextRequest){
     });
 
     const emails=[...nikkeiEmails,...rssEmails].sort((a,b)=>Number(b.internalDate||0)-Number(a.internalDate||0));
+    const displayCounts=Object.fromEntries(["AFPBB","FNN","マイナビニュース","ITmedia","日経"].map(source=>[
+      source,
+      emails.reduce((n:number,email:any)=>n+email.news.filter((news:any)=>news.source===source).length,0)
+    ]));
+    console.log("[NEWS] DISPLAY_SUMMARY",{rssArticles:rssArticles.length,nikkeiArticles:nikkei.length,nikkeiEmails:nikkeiEmails.length,rssIssues:rssEmails.length,totalIssues:emails.length,totalDisplayedArticles:emails.reduce((n:number,email:any)=>n+email.news.length,0),displayCounts});
     return NextResponse.json({emails,sources:{enabled:["AFPBB","FNN","マイナビニュース","ITmedia","日経メール"]}},{headers:{"Cache-Control":"no-store"}});
   }catch(e){
     console.error("[api/emails]",e);
