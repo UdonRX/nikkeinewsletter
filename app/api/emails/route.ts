@@ -3,7 +3,7 @@ import { listNikkeiMessages, getMessage, extractMimeBody, header } from "@/lib/g
 import { parseNikkeiEmail } from "@/lib/parser";
 import { refreshAccessToken } from "@/lib/google";
 import { getRefreshToken, setAccessToken } from "@/lib/session";
-import { fetchNewsArticles, daypart, issueDate, toLegacyNews } from "@/lib/rss";
+import { fetchNewsArticles, daypart, issueDate, toLegacyNews, inferCategory, scoreArticle } from "@/lib/rss";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,20 +41,20 @@ function editionInfo(internalDate: string | undefined, dateHeader: string, conte
   return {kind:hour>=5&&hour<11?"朝刊":hour>=11&&hour<17?"昼刊":"夕刊",issueDate:`${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`};
 }
 
-function parseNikkeiNews(html:string,text:string,mailId:string,sourceIndex:number){
+function parseNikkeiNews(html:string,text:string,mailId:string,sourceIndex:number,publishedAt:string){
   return parseNikkeiEmail(html,text).map((n:any,i:number)=>({
     id:`nikkei:${mailId}:${i}`,
     source:"日経",
     title:n.title||"無題",
     url:n.url||"",
-    publishedAt:new Date().toISOString(),
+    publishedAt,
     description:n.body||"",
     content:n.body||"",
     imageUrl:n.imageUrl,
-    category:"other",
-    primaryCategory:"other",
+    category:inferCategory(n.title||"",n.body||""),
+    primaryCategory:inferCategory(n.title||"",n.body||""),
     tags:["日経"],
-    importanceScore:1,
+    importanceScore:scoreArticle(n.title||"",n.body||"",inferCategory(n.title||"",n.body||"")),
     index:sourceIndex+i,
   })).filter((n:any)=>n.url&&/^https?:\/\//i.test(n.url));
 }
@@ -71,6 +71,7 @@ async function getNikkeiNews(accessToken:string){
     const {html,text}=await extractMimeBody(accessToken,m.id!,full.payload);
     const contentForEdition=html||text||"";
     const edition=editionInfo(full.internalDate??undefined,dateHeader,contentForEdition);
+    const publishedAt=full.internalDate ? new Date(Number(full.internalDate)).toISOString() : new Date(dateHeader).toISOString();
     const kind=sender.includes("sokuho-news@mx.nikkei.com")?"速報":edition.kind;
     const news=parseNikkeiEmail(html,text);
     emails.push({
@@ -78,7 +79,7 @@ async function getNikkeiNews(accessToken:string){
       receivedAt:dateHeader,internalDate:full.internalDate||"",issueDate:edition.issueDate,
       snippet:full.snippet||"",newsCount:news.length,news,
     });
-    articles.push(...parseNikkeiNews(html,text,m.id!,articles.length));
+    articles.push(...parseNikkeiNews(html,text,m.id!,articles.length,publishedAt));
   }
   return {emails,articles};
 }
