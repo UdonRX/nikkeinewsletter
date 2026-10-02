@@ -13,9 +13,19 @@ async function token(req: NextRequest) {
   if (current) return current;
   const refresh = await getRefreshToken();
   if (!refresh) return null;
-  const fresh = await refreshAccessToken(refresh);
-  if (fresh) await setAccessToken(fresh);
-  return fresh;
+  try {
+    const fresh = await refreshAccessToken(refresh);
+    if (fresh) await setAccessToken(fresh);
+    return fresh;
+  } catch (e) {
+    console.warn("[api/emails] Gmail token refresh failed; continuing with RSS:", e);
+    try {
+      const jar = await import("next/headers").then(({ cookies }) => cookies());
+      jar.delete("nn_refresh_token");
+      jar.delete("nn_access_token");
+    } catch {}
+    return null;
+  }
 }
 
 function editionInfo(internalDate: string | undefined, dateHeader: string, content = "") {
@@ -105,9 +115,18 @@ export async function GET(req:NextRequest){
     let nikkeiEmails:any[]=[];
     const accessToken=await token(req);
     if(accessToken){
-      const result=await getNikkeiNews(accessToken);
-      nikkei=result.articles;
-      nikkeiEmails=result.emails;
+      try {
+        const result=await getNikkeiNews(accessToken);
+        nikkei=result.articles;
+        nikkeiEmails=result.emails;
+      } catch (e) {
+        console.warn("[api/emails] Nikkei Gmail retrieval failed; continuing with RSS:", e);
+        try {
+          const jar = await import("next/headers").then(({ cookies }) => cookies());
+          jar.delete("nn_access_token");
+          jar.delete("nn_refresh_token");
+        } catch {}
+      }
     }
 
     const all=dedupeArticles([...rssArticles,...nikkei]).sort((a,b)=>
