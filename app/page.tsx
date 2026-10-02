@@ -105,12 +105,38 @@ function latestRegular(emails: Email[]) {
 }
 
 function latestRegularIssues(emails: Email[]) {
+  // 同じ日・同じ刊のRSSと日経メールを1つの号にまとめる。
+  // 日経メール接続後もRSS側のニュースが隠れないようにする。
   const regular = emails.filter((email) => email.kind !== "速報" && email.news.length > 0)
     .slice().sort((a,b) => Number(b.internalDate||0)-Number(a.internalDate||0));
+  const groups = new Map<string, Email[]>();
+
+  for (const email of regular) {
+    const date = email.issueDate || dateKey(email.internalDate || email.receivedAt);
+    const key = `${date}|${email.kind}`;
+    const list = groups.get(key) || [];
+    list.push(email);
+    groups.set(key, list);
+  }
+
   const result: Email[] = [];
   for (const kind of ["朝刊","昼刊","夕刊"] as const) {
-    const issue = regular.find((email) => email.kind === kind);
-    if (issue) result.push(issue);
+    const candidates = [...groups.entries()]
+      .filter(([key]) => key.endsWith(`|${kind}`))
+      .sort((a,b) => Number(b[1][0]?.internalDate||0) - Number(a[1][0]?.internalDate||0));
+
+    const [, issues] = candidates[0] || [];
+    if (!issues?.length) continue;
+
+    const primary = issues[0];
+    const mergedNews = issues.flatMap((email) => email.news);
+    result.push({
+      ...primary,
+      id: `merged:${primary.issueDate || dateKey(primary.internalDate || primary.receivedAt)}|${kind}`,
+      newsCount: mergedNews.length,
+      news: mergedNews,
+      from: [...new Set(issues.map((email) => email.from).filter(Boolean))].join(" / "),
+    });
   }
   return result;
 }
