@@ -184,12 +184,26 @@ function selectBalancedRssArticles(articles:NewsArticle[],terms:string[]){
       new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime()
     )
   ])) as Record<(typeof sources)[number],NewsArticle[]>;
-  const quota=Math.min(...sources.map(source=>bySource[source].length));
-  const selected=sources.flatMap(source=>bySource[source].slice(0,quota));
+  // 取得できなかったソースを含めて最小値を取ると、1ソースが0件の瞬間に
+  // 全RSSが0件になる。利用可能なソースだけで均等配分し、取得できたRSSを
+  // Trends一致の有無にかかわらず表示できるようにする。
+  const availableSources=sources.filter(source=>bySource[source].length>0);
+  if(!availableSources.length){
+    console.log("[RSS] BALANCED_SELECTION",{
+      selectedPerSource:Object.fromEntries(sources.map(source=>[source,0])),
+      total:0,
+      trendMatched:0,
+      unavailableSources:sources
+    });
+    return [];
+  }
+  const quota=Math.min(...availableSources.map(source=>bySource[source].length));
+  const selected=availableSources.flatMap(source=>bySource[source].slice(0,quota));
   console.log("[RSS] BALANCED_SELECTION",{
-    selectedPerSource:Object.fromEntries(sources.map(source=>[source,bySource[source].slice(0,quota).length])),
+    selectedPerSource:Object.fromEntries(sources.map(source=>[source,selected.filter(article=>article.source===source).length])),
     total:selected.length,
-    trendMatched:selected.filter(article=>trendBoost(article,terms)>0).length
+    trendMatched:selected.filter(article=>trendBoost(article,terms)>0).length,
+    unavailableSources:sources.filter(source=>!availableSources.includes(source))
   });
   return selected.sort((a,b)=>newsRankScore(b,terms)-newsRankScore(a,terms)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
 }
