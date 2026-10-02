@@ -148,32 +148,28 @@ export async function GET(req:NextRequest){
       }
     }
 
-    const all=dedupeArticles([...rssArticles,...nikkei]).sort((a,b)=>
-      (b.importanceScore||0)-(a.importanceScore||0) ||
-      new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime()
-    );
-
+    // RSSと日経メールを分離する。日経メールはRSSの重複排除・件数制限の対象にしない。
     const groups=new Map<string,any[]>();
-    for(const article of all){
+    for(const article of rssArticles){
       const key=issueDate(article.publishedAt)+"|"+daypart(article.publishedAt);
       const list=groups.get(key)||[];
       list.push(article); groups.set(key,list);
     }
 
     const groupedRssArticles=[...groups.values()].reduce((n,list)=>n+list.length,0);
-    const rssIssueOverflow=[...groups.entries()].map(([key,list])=>({key,raw:list.length,displayed:Math.min(list.length,80),dropped:Math.max(0,list.length-80)})).filter(x=>x.dropped>0);
-    const rssCappedArticles=rssIssueOverflow.reduce((n,x)=>n+x.dropped,0);
     console.log("[NEWS] GROUP_SUMMARY",{
       rssInputArticles:rssArticles.length,
       groupedRssArticles,
       groupedDroppedBeforeIssueCap:Math.max(0,rssArticles.length-groupedRssArticles),
       issueCount:groups.size,
-      issueCapDropped:rssCappedArticles,
-      cappedIssues:rssIssueOverflow.slice(0,20)
+      issueCapDropped:0,
+      nikkeiInputArticles:nikkei.length,
+      nikkeiDisplayCount:nikkeiEmails.reduce((n:number,email:any)=>n+email.news.length,0)
     });
     const rssEmails=[...groups.entries()].map(([key,list])=>{
       const [date,kind]=key.split("|") as [string,"朝刊"|"昼刊"|"夕刊"];
-      const sorted=list.slice(0,80);
+      // RSSも選別済みの記事は全件表示し、Issue単位の80件上限は設けない。
+      const sorted=list.slice();
       const internalDate=sorted[0]?.publishedAt||new Date().toISOString();
       return {
         id:`rss:${key}`,threadId:`rss:${key}`,from:[...new Set(sorted.map(a=>a.source))].join(" / "),
@@ -201,7 +197,7 @@ export async function GET(req:NextRequest){
       totalIssues:emails.length,
       totalDisplayedArticles:emails.reduce((n:number,email:any)=>n+email.news.length,0),
       rssDisplayCounts,
-      rssIssueCapDropped:rssCappedArticles,
+      rssIssueCapDropped:0,
       groupedRssArticles,
       nikkeiDisplayCount,
       displayCounts
