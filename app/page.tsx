@@ -10,6 +10,11 @@ type News = {
   section?: string;
   imageUrl?: string;
   imageAlt?: string;
+  source?: string;
+  category?: string;
+  tags?: string[];
+  importanceScore?: number;
+  publishedAt?: string;
 };
 
 type Email = {
@@ -125,6 +130,7 @@ function latestRegularIssues(emails: Email[]) {
 }
 
 function newsImageSrc(news?: News) {
+  if (news?.imageUrl) return news.imageUrl;
   return news?.url ? "/api/news-image?url=" + encodeURIComponent(news.url) : "";
 }
 
@@ -179,11 +185,11 @@ export default function Home() {
     fetch("/api/emails", { cache: "no-store" })
       .then(async (r) => {
         const j = await r.json().catch(() => ({}));
-        if (r.status === 401) throw new Error("Googleアカウントを接続してください。");
-        if (!r.ok) throw new Error(j.error || "メールを取得できませんでした");
+        if (r.status === 401) throw new Error("ニュースを取得できませんでした。");
+        if (!r.ok) throw new Error(j.error || "ニュースを取得できませんでした");
         setEmails(j.emails || []);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "メールを取得できませんでした"))
+      .catch((e) => setError(e instanceof Error ? e.message : "ニュースを取得できませんでした"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -391,15 +397,15 @@ export default function Home() {
   const short = currentShortNews();
 
   if (loading) {
-    return <main className="app-shell"><div className="loading">日経ニュースを読み込んでいます…</div></main>;
+    return <main className="app-shell"><div className="loading">ニュースを読み込んでいます…</div></main>;
   }
 
   if (error) {
     return (
       <main className="app-shell">
         <div className="connect-card">
-          <div className="eyebrow">NIKKEI NEWS MAIL</div>
-          <h1>日経ニュース</h1>
+          <div className="eyebrow">NEWS READER</div>
+          <h1>ニュース</h1>
           <p>{error}</p>
           <a className="btn" href="/api/auth/google">Googleで接続</a>
         </div>
@@ -423,6 +429,7 @@ export default function Home() {
           </header>
           <article className="safari-reader">
             {reader.data?.imageUrl && <img className="reader-hero" src={reader.data.imageUrl} alt="" />}
+            <div style={{fontSize:"0.78rem",opacity:.65,marginBottom:"8px"}}>{news?.source || "ニュースソース"}</div>
             <h1>{reader.data?.title || news?.title}</h1>
             {readerLoading ? (
               <div className="reader-loading">記事を読み込んでいます…</div>
