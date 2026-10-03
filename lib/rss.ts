@@ -104,6 +104,7 @@ async function fetchHtmlFallback(config:FeedConfig,fallbackUrl:string){
   }
 }
 async function fetchFeed(config:FeedConfig){
+  const started=Date.now();
   const controller=new AbortController();
   const timeoutMs=15000;
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -117,7 +118,7 @@ async function fetchFeed(config:FeedConfig){
     if(!r.ok)throw new Error("HTTP "+r.status);
     if(!/<(?:rss|feed|rdf:RDF)\b/i.test(xml))throw new Error("XML root not recognized");
     const articles=parseFeed(xml,config);
-    console.log("[RSS] PARSE",label,{articles:articles.length});
+    console.log("[RSS] PARSE",label,{articles:articles.length,durationMs:Date.now()-started});
     return articles;
   }catch(error){
     if(error instanceof Error && error.name==="AbortError"){
@@ -143,7 +144,10 @@ async function fetchFeed(config:FeedConfig){
       }
     }
     throw error;
-  } finally { clearTimeout(timer); }
+  } finally {
+    clearTimeout(timer);
+    console.log("[RSS] DONE",label,{durationMs:Date.now()-started});
+  }
 }
 
 export async function fetchGoogleTrendTerms(){
@@ -187,16 +191,21 @@ function selectAllRssArticles(articles:NewsArticle[],terms:string[]){
 }
 
 export async function fetchNewsArticles(trendTermsInput?:string[]){
+  const started=Date.now();
+  console.log("[RSS] FETCH_ALL_START",{feeds:RSS_FEEDS.length});
   const results=await Promise.allSettled(RSS_FEEDS.map(fetchFeed));
   const failed=results.filter(r=>r.status==="rejected").length;
   const fetched=results.filter(r=>r.status==="fulfilled").reduce((n,r)=>n+r.value.length,0);
   const articles=results.flatMap(r=>r.status==="fulfilled"?r.value:[]).sort((a,b)=>(b.importanceScore||0)-(a.importanceScore||0)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
+  const uniqueStarted=Date.now();
   const unique:NewsArticle[]=[];
   for(const a of articles){if(unique.some(b=>isDuplicate(b,a)))continue;unique.push(a);}
+  console.log("[RSS] DEDUPE_DONE",{durationMs:Date.now()-uniqueStarted,inputArticles:articles.length,uniqueArticles:unique.length});
   const trendTerms=trendTermsInput??await fetchGoogleTrendTerms();
   const displayed=selectAllRssArticles(unique,trendTerms);
   const sourceCounts=Object.fromEntries((["AFPBB","FNN","マイナビニュース","ITmedia"] as const).map(source=>[source,displayed.filter(a=>a.source===source).length]));
   console.log("[RSS] SUMMARY",{
+    totalDurationMs:Date.now()-started,
     feeds:RSS_FEEDS.length,
     failed,
     succeeded:RSS_FEEDS.length-failed,
