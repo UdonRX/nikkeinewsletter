@@ -232,7 +232,7 @@ async function fetchFeed(config:FeedConfig){
 }
 
 
-async function fetchGoogleTrendTerms(){
+export async function fetchGoogleTrendTerms(){
   const url="https://trends.google.com/trending/rss?geo=JP";
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),5000);
