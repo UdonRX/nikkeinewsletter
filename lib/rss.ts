@@ -253,23 +253,27 @@ export async function fetchGoogleTrendTerms(){
 function trendBoost(article:NewsArticle,terms:string[]){
   if(!terms.length)return 0;
   const text=(article.title+" "+(article.description||"")).toLowerCase();
+  const isLiveSports=/速報|試合途中|試合開始前|試合結果|試合速報|プロ野球|サッカー速報|スコア速報/.test(article.title);
   const matches=terms.map((term,index)=>({term:term.toLowerCase().trim(),index})).filter(x=>x.term.length>=2&&text.includes(x.term));
   if(!matches.length)return 0;
-  const scores=matches.map(({term,index})=>(index<5?12:index<15?9:index<30?7:4)+(term.replace(/\\s/g,"").length>=4?2:0)).sort((a,b)=>b-a);
-  return Math.min(18,scores[0]+(scores[1]?Math.min(5,scores[1]):0));
+  const scores=matches.map(({term,index})=>(index<5?6:index<15?5:index<30?3:2)+(term.replace(/\\s/g,"").length>=4?1:0)).sort((a,b)=>b-a);
+  const raw=Math.min(8,scores[0]+(scores[1]?Math.min(2,scores[1]):0));
+  return isLiveSports?Math.min(2,raw):Math.min(6,raw);
+}
+function importanceRankScore(article:NewsArticle,terms:string[]){
+  return (article.importanceScore||0)+trendBoost(article,terms);
 }
 function newsRankScore(article:NewsArticle,terms:string[]){
   const ageHours=Math.max(0,(Date.now()-new Date(article.publishedAt).getTime())/3600000);
   const freshness=Math.max(0,8-Math.min(8,ageHours/6));
-  return (article.importanceScore||0)+trendBoost(article,terms)+freshness;
+  return importanceRankScore(article,terms)+freshness;
 }
 export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
   const ranked=articles.map(article=>{
     const trendScore=trendBoost(article,terms);
-    const ageHours=Math.max(0,(Date.now()-new Date(article.publishedAt).getTime())/3600000);
-    const freshness=Math.max(0,8-Math.min(8,ageHours/6));
-    return {article,score:(article.importanceScore||0)+trendScore+freshness,trendScore};
-  }).sort((a,b)=>b.score-a.score||new Date(b.article.publishedAt).getTime()-new Date(a.article.publishedAt).getTime());
+    const baseImportance=article.importanceScore||0;
+    return {article,score:baseImportance+trendScore,trendScore};
+  }).sort((a,b)=>b.score-a.score||(b.article.importanceScore||0)-(a.article.importanceScore||0)||new Date(b.article.publishedAt).getTime()-new Date(a.article.publishedAt).getTime());
   const total=ranked.length;
   const fiveLimit=Math.max(3,Math.ceil(total*0.01));
   const fourLimit=Math.max(fiveLimit+5,Math.ceil(total*0.05));
@@ -277,7 +281,8 @@ export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
   const twoLimit=Math.max(threeLimit+20,Math.ceil(total*0.50));
   const scored=ranked.map((entry,index)=>{
     const rank=index+1;
-    const stars=rank<=fiveLimit&&entry.score>=24?5:rank<=fourLimit&&entry.score>=18?4:rank<=threeLimit&&entry.score>=12?3:rank<=twoLimit&&entry.score>=7?2:1;
+    const baseImportance=entry.article.importanceScore||0;
+    const stars=rank<=fiveLimit&&baseImportance>=13&&entry.score>=13?5:rank<=fourLimit&&baseImportance>=10&&entry.score>=10?4:rank<=threeLimit&&baseImportance>=6&&entry.score>=6?3:rank<=twoLimit&&baseImportance>=2&&entry.score>=2?2:1;
     return {...entry.article,trendScore:entry.trendScore,importanceStars:stars};
   });
   const counts=Object.fromEntries([1,2,3,4,5].map(star=>[star,scored.filter(a=>a.importanceStars===star).length]));
@@ -285,24 +290,9 @@ export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
   const top10=scored.slice(0,10).map((a,index)=>{
     const ageHours=Math.max(0,(Date.now()-new Date(a.publishedAt).getTime())/3600000);
     const freshness=Math.max(0,8-Math.min(8,ageHours/6));
-    return {
-      rank:index+1,
-      stars:a.importanceStars,
-      score:newsRankScore(a,terms),
-      baseImportance:a.importanceScore||0,
-      trendScore:a.trendScore||0,
-      freshness:Number(freshness.toFixed(2)),
-      source:a.source,
-      title:a.title
-    };
+    return {rank:index+1,stars:a.importanceStars,score:importanceRankScore(a,terms),baseImportance:a.importanceScore||0,trendScore:a.trendScore||0,freshness:Number(freshness.toFixed(2)),source:a.source,title:a.title};
   });
-  console.log("[STARS] THRESHOLD_CHECK",{
-    total,
-    rankLimits:{five:fiveLimit,four:fourLimit,three:threeLimit,two:twoLimit},
-    absoluteGates:{five:24,four:18,three:12,two:7},
-    counts,
-    trendMatched:trendMatchedCount
-  });
+  console.log("[STARS] THRESHOLD_CHECK",{total,rankLimits:{five:fiveLimit,four:fourLimit,three:threeLimit,two:twoLimit},absoluteGates:{five:"base>=13",four:"base>=10",three:"base>=6",two:"base>=2"},trendCap:{normal:6,liveSports:2},counts,trendMatched:trendMatchedCount});
   console.log("[STARS] COUNTS",JSON.stringify(counts));
   console.log("[STARS] TOP10",JSON.stringify(top10));
   return scored;
