@@ -319,16 +319,49 @@ export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
     const stars=score>=13&&baseImportance>=13?5:score>=10&&baseImportance>=10?4:score>=6&&baseImportance>=6?3:score>=2&&baseImportance>=2?2:1;
     return {...article,trendScore,importanceStars:stars};
   });
-  const counts=Object.fromEntries([1,2,3,4,5].map(star=>[star,scored.filter(a=>a.importanceStars===star).length]));
-  const trendMatchedCount=scored.filter(a=>(a.trendScore||0)>0).length;
-  const top10=scored.slice().sort((a,b)=>importanceRankScore(b,terms)-importanceRankScore(a,terms)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime()).slice(0,10).map((a,index)=>{
-    const ageHours=Math.max(0,(Date.now()-new Date(a.publishedAt).getTime())/3600000);
-    const freshness=Math.max(0,8-Math.min(8,ageHours/6));
-    return {rank:index+1,stars:a.importanceStars,score:importanceRankScore(a,terms),baseImportance:a.importanceScore||0,trendScore:a.trendScore||0,freshness:Number(freshness.toFixed(2)),source:a.source,title:a.title};
+  const gates=[
+    {stars:5,minBase:13,minScore:13},
+    {stars:4,minBase:10,minScore:10},
+    {stars:3,minBase:6,minScore:6},
+    {stars:2,minBase:2,minScore:2},
+    {stars:1,minBase:null,minScore:null}
+  ];
+  const counts=Object.fromEntries(gates.map(g=>[g.stars,scored.filter(a=>a.importanceStars===g.stars).length]));
+  const violations=scored.filter(article=>{
+    const expected=article.score>=13&&article.baseImportance>=13?5:article.score>=10&&article.baseImportance>=10?4:article.score>=6&&article.baseImportance>=6?3:article.score>=2&&article.baseImportance>=2?2:1;
+    return article.importanceStars!==expected;
+  }).length;
+  const boundaryChecks=gates.map(g=>{
+    const group=scored.filter(a=>a.importanceStars===g.stars);
+    if(!group.length)return {stars:g.stars,count:0};
+    const minScore=Math.min(...group.map(a=>a.score));
+    const maxScore=Math.max(...group.map(a=>a.score));
+    const minBase=Math.min(...group.map(a=>a.baseImportance));
+    const maxBase=Math.max(...group.map(a=>a.baseImportance));
+    const lowest=group.slice().sort((a,b)=>a.score-b.score||a.baseImportance-b.baseImportance)[0];
+    return {
+      stars:g.stars,
+      count:group.length,
+      scoreRange:[minScore,maxScore],
+      baseRange:[minBase,maxBase],
+      lowest:{score:lowest.score,baseImportance:lowest.baseImportance,source:lowest.source,title:lowest.title}
+    };
   });
-  console.log("[STARS] THRESHOLD_CHECK",{total:scored.length,absoluteGates:{five:"base>=13 and score>=13",four:"base>=10 and score>=10",three:"base>=6 and score>=6",two:"base>=2 and score>=2"},trendCap:{normal:6,liveSports:2},counts,trendMatched:trendMatchedCount});
-  console.log("[STARS] COUNTS",JSON.stringify(counts));
-  console.log("[STARS] TOP10",JSON.stringify(top10));
+  const trendMatchedCount=scored.filter(a=>(a.trendScore||0)>0).length;
+  console.log("[STARS] VALIDATION",JSON.stringify({
+    total:scored.length,
+    gates:{
+      "5":"base>=13 && score>=13",
+      "4":"base>=10 && score>=10",
+      "3":"base>=6 && score>=6",
+      "2":"base>=2 && score>=2",
+      "1":"otherwise"
+    },
+    counts,
+    violations,
+    trendMatched:trendMatchedCount,
+    boundaryChecks
+  }));
   return scored;
 }
 function selectAllRssArticles(articles:NewsArticle[],terms:string[]){
