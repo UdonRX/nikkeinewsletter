@@ -2,7 +2,7 @@ import { JSDOM } from "jsdom";
 
 export type NewsCategory = "politics"|"economy"|"business"|"international"|"market"|"technology"|"science"|"society"|"life"|"other";
 export type NewsArticle = {
-  id:string; source:"AFPBB"|"FNN"|"マイナビニュース"|"ITmedia"|"日経"; title:string; url:string;
+  id:string; source:"Yahoo!ニュース"|"FNN"|"マイナビニュース"|"ITmedia"|"日経"; title:string; url:string;
   publishedAt:string; updatedAt?:string; description?:string; content?:string; imageUrl?:string;
   category?:NewsCategory; primaryCategory?:NewsCategory; tags?:string[]; importanceScore?:number;
 };
@@ -10,7 +10,7 @@ type FeedConfig={source:NewsArticle["source"];url:string;categoryHint?:NewsCateg
 
 export const RSS_FEEDS:FeedConfig[]=[
  {source:"FNN",url:"https://www.fnn.jp/list/feed/rss",categoryHint:"society",tags:["FNNプライムオンライン"]},
- {source:"AFPBB",url:"https://news.yahoo.co.jp/rss/categories/world.xml",tags:["国際","外交","海外政治","世界経済","社会","科学","ライフ"]},
+ {source:"Yahoo!ニュース",url:"https://news.yahoo.co.jp/rss/categories/world.xml",tags:["国際","外交","海外政治","世界経済","社会","科学","ライフ"]},
  {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/index"},
  {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/techplus/enterprise",categoryHint:"business",tags:["企業IT","企業","IT"]},
  {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/techplus/technology",categoryHint:"technology",tags:["テクノロジー"]},
@@ -48,12 +48,17 @@ const IMPORTANCE_RULES:Array<[number,string[]]>=[
 ];
 
 let activeParseMetrics:{decodeHtmlCalls:number;decodeHtmlMs:number;cleanTextCalls:number;cleanTextMs:number}|null=null;
+const HTML_ENTITIES:Record<string,string>={amp:"&",lt:"<",gt:">",quot:'"',apos:"'",nbsp:"\\u00a0",hellip:"…",ndash:"–",mdash:"—",laquo:"«",raquo:"»",copy:"©",reg:"®",trade:"™",yen:"¥",euro:"€"};
 function decodeHtml(v:string){
   const started=Date.now();
-  const doc=new JSDOM("<body></body>").window.document;
-  const e=doc.createElement("textarea");
-  e.innerHTML=v||"";
-  const value=e.value;
+  const value=(v||"").replace(/&(#(?:x[0-9a-f]+|\\d+)|[a-z][a-z0-9]+);/gi,(full,entity:string)=>{
+    if(entity[0]==="#"){
+      const hex=/^#x/i.test(entity);
+      const code=Number.parseInt(entity.slice(hex?2:1),hex?16:10);
+      return Number.isFinite(code)&&code>0&&code<=0x10ffff?String.fromCodePoint(code):full;
+    }
+    return HTML_ENTITIES[entity.toLowerCase()]??full;
+  });
   if(activeParseMetrics){activeParseMetrics.decodeHtmlCalls++;activeParseMetrics.decodeHtmlMs+=Date.now()-started;}
   return value;
 }
@@ -333,7 +338,7 @@ export async function fetchNewsArticles(trendTermsInput?:string[]){
   const articles=results.flatMap(r=>r.status==="fulfilled"?r.value:[]).sort((a,b)=>(b.importanceScore||0)-(a.importanceScore||0)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
   const trendTerms=trendTermsInput??await fetchGoogleTrendTerms();
   const displayed=selectAllRssArticles(articles,trendTerms);
-  const sourceCounts=Object.fromEntries(["AFPBB","FNN","マイナビニュース","ITmedia"].map(source=>[source,displayed.filter(a=>a.source===source).length]));
+  const sourceCounts=Object.fromEntries(["Yahoo!ニュース","FNN","マイナビニュース","ITmedia"].map(source=>[source,displayed.filter(a=>a.source===source).length]));
   console.log("[RSS] SUMMARY",{
     totalDurationMs:Date.now()-started,
     feeds:RSS_FEEDS.length,
