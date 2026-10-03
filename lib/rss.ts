@@ -281,14 +281,26 @@ export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
     return {...entry.article,trendScore:entry.trendScore,importanceStars:stars};
   });
   const counts=Object.fromEntries([1,2,3,4,5].map(star=>[star,scored.filter(a=>a.importanceStars===star).length]));
+  const trendMatchedCount=scored.filter(a=>(a.trendScore||0)>0).length;
+  const top10=scored.slice(0,10).map((a,index)=>({
+    rank:index+1,
+    title:a.title,
+    source:a.source,
+    publishedAt:a.publishedAt,
+    score:newsRankScore(a,terms),
+    baseImportance:a.importanceScore||0,
+    trendScore:a.trendScore||0,
+    stars:a.importanceStars
+  }));
   console.log("[STARS] THRESHOLD_CHECK",{
     total,
     rankLimits:{five:fiveLimit,four:fourLimit,three:threeLimit,two:twoLimit},
     absoluteGates:{five:24,four:18,three:12,two:7},
     counts,
-    trendMatched:scored.filter(a=>(a.trendScore||0)>0).length,
-    top10:scored.slice(0,10).map((a,index)=>({rank:index+1,title:a.title,baseImportance:a.importanceScore||0,trendScore:a.trendScore||0,stars:a.importanceStars}))
+    trendMatched:trendMatchedCount
   });
+  console.log("[STARS] COUNTS",JSON.stringify(counts));
+  console.log("[STARS] TOP10",JSON.stringify(top10));
   return scored;
 }
 function selectAllRssArticles(articles:NewsArticle[],terms:string[]){
