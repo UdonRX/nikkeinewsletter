@@ -68,9 +68,6 @@ function attr(block:string,tag:string,name:string){const re=new RegExp("<"+tag+"
 function parseDate(v:string){const d=new Date(cleanText(v));return Number.isNaN(d.getTime())?new Date().toISOString():d.toISOString();}
 export function inferCategory(title:string,description:string,hint?:NewsCategory){const text=title+" "+description;let best:NewsCategory=hint||"other";let score=hint?1:0;for(const [cat,words] of CATEGORY_RULES){const hits=words.reduce((n,w)=>n+(text.includes(w)?1:0),0);if(hits>score){best=cat;score=hits;}}return best;}
 export function scoreArticle(title:string,description:string,category:NewsCategory){const text=title+" "+description;let score=category==="other"?0:1;for(const [points,words] of IMPORTANCE_RULES)for(const w of words)if(text.includes(w))score+=points;return Math.max(-2,Math.min(15,score));}
-function normalizeTitle(t:string){return t.toLowerCase().replace(/【[^】]*】|\[[^\]]*\]|「[^」]*」/g,"").replace(/\s+/g,"").replace(/[「」『』【】（）()［］\[\]・:：、,.，．!！?？"'”’]/g,"");}
-function tokens(t:string){return new Set(t.toLowerCase().split(/[^0-9a-zA-Z一-龥ぁ-んァ-ヶー]+/).map(v=>v.trim()).filter(v=>v.length>=2));}
-function isDuplicate(a:NewsArticle,b:NewsArticle){if(a.url===b.url)return true;const na=normalizeTitle(a.title),nb=normalizeTitle(b.title);if(na&&nb&&(na===nb||na.includes(nb)||nb.includes(na)))return true;const ta=tokens(a.title),tb=tokens(b.title);if(!ta.size||!tb.size)return false;const common=[...ta].filter(t=>tb.has(t)).length;return common/Math.min(ta.size,tb.size)>=.72&&Math.abs(new Date(a.publishedAt).getTime()-new Date(b.publishedAt).getTime())<=12*60*60*1000;}
 function extractImage(block:string){const media=attr(block,"media:content","url")||attr(block,"media:thumbnail","url")||attr(block,"enclosure","url");if(media)return decodeHtml(media);const encoded=field(block,["content:encoded"]);return encoded.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["']/i)?.[1]||"";}
 function parseFeed(xml:string,config:FeedConfig):NewsArticle[]{
   const metrics={
@@ -334,20 +331,15 @@ export async function fetchNewsArticles(trendTermsInput?:string[]){
   const failed=results.filter(r=>r.status==="rejected").length;
   const fetched=results.filter(r=>r.status==="fulfilled").reduce((n,r)=>n+r.value.length,0);
   const articles=results.flatMap(r=>r.status==="fulfilled"?r.value:[]).sort((a,b)=>(b.importanceScore||0)-(a.importanceScore||0)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
-  const uniqueStarted=Date.now();
-  const unique:NewsArticle[]=[];
-  for(const a of articles){if(unique.some(b=>isDuplicate(b,a)))continue;unique.push(a);}
-  console.log("[RSS] DEDUPE_DONE",{durationMs:Date.now()-uniqueStarted,inputArticles:articles.length,uniqueArticles:unique.length});
   const trendTerms=trendTermsInput??await fetchGoogleTrendTerms();
-  const displayed=selectAllRssArticles(unique,trendTerms);
-  const sourceCounts=Object.fromEntries((["AFPBB","FNN","マイナビニュース","ITmedia"] as const).map(source=>[source,displayed.filter(a=>a.source===source).length]));
+  const displayed=selectAllRssArticles(articles,trendTerms);
+  const sourceCounts=Object.fromEntries(["AFPBB","FNN","マイナビニュース","ITmedia"].map(source=>[source,displayed.filter(a=>a.source===source).length]));
   console.log("[RSS] SUMMARY",{
     totalDurationMs:Date.now()-started,
     feeds:RSS_FEEDS.length,
     failed,
     succeeded:RSS_FEEDS.length-failed,
     parsedArticles:fetched,
-    uniqueArticles:unique.length,
     displayedArticles:displayed.length,
     sourceCounts,
     trendTerms:trendTerms.length
