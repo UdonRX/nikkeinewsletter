@@ -127,18 +127,30 @@ function dedupeArticles(articles:any[]){
 }
 
 export async function GET(req:NextRequest){
+  const requestStarted=Date.now();
+  const debugId=req.headers.get("x-news-debug-id")||crypto.randomUUID();
+  const mark=(stage:string,extra:Record<string,unknown>={})=>console.log("[NEWS_LOAD]",stage,{debugId,elapsedMs:Date.now()-requestStarted,...extra});
+  mark("API_START");
   try{
+    const trendStarted=Date.now();
     const trendTerms=await fetchGoogleTrendTerms();
+    mark("TRENDS_DONE",{durationMs:Date.now()-trendStarted,terms:trendTerms.length});
+    const rssStarted=Date.now();
     const rssArticles=await fetchNewsArticles(trendTerms);
+    mark("RSS_DONE",{durationMs:Date.now()-rssStarted,articles:rssArticles.length});
     let nikkei:any[]=[];
     let nikkeiEmails:any[]=[];
+    const tokenStarted=Date.now();
     const accessToken=await token(req);
+    mark("TOKEN_DONE",{durationMs:Date.now()-tokenStarted,connected:Boolean(accessToken)});
     console.log("[GMAIL] STATUS",accessToken?"connected":"not_connected");
     if(accessToken){
       try {
+        const gmailStarted=Date.now();
         const result=await getNikkeiNews(accessToken);
         nikkei=result.articles;
         nikkeiEmails=result.emails;
+        mark("GMAIL_DONE",{durationMs:Date.now()-gmailStarted,emails:nikkeiEmails.length,articles:nikkei.length});
       } catch (e) {
         console.warn("[api/emails] Nikkei Gmail retrieval failed; continuing with RSS:", e);
         try {
@@ -180,8 +192,10 @@ export async function GET(req:NextRequest){
       };
     });
 
+    const starsStarted=Date.now();
     const allForStars=[...nikkei.flatMap((article:any)=>[article]),...rssEmails.flatMap((email:any)=>email.news.map((news:any)=>news))];
     const starred=applyImportanceStars(allForStars.map((article:any)=>({id:article.id,source:article.source,title:article.title,url:article.url||"",publishedAt:article.publishedAt||new Date().toISOString(),description:article.description||article.body||"",content:article.content||article.body||"",category:article.category,primaryCategory:article.primaryCategory||article.category,tags:article.tags,importanceScore:article.importanceScore||0})),trendTerms);
+    mark("STARS_DONE",{durationMs:Date.now()-starsStarted,articles:allForStars.length});
     const starMap=new Map(starred.map((article:any)=>[article.id,article]));
     for(const email of nikkeiEmails) for(const news of email.news){const scored=starMap.get(news.id);if(scored){news.trendScore=scored.trendScore;news.importanceStars=scored.importanceStars;}}
     for(const email of rssEmails) for(const news of email.news as any[]){const scored=starMap.get(news.id);if(scored){news.trendScore=scored.trendScore;news.importanceStars=scored.importanceStars;}}
@@ -208,8 +222,10 @@ export async function GET(req:NextRequest){
       nikkeiDisplayCount,
       displayCounts
     });
-    return NextResponse.json({emails,sources:{enabled:["AFPBB","FNN","マイナビニュース","ITmedia","日経メール"]}},{headers:{"Cache-Control":"no-store"}});
+    mark("API_RESPONSE_READY",{totalMs:Date.now()-requestStarted,issues:emails.length,articles:emails.reduce((n:number,email:any)=>n+email.news.length,0)});
+    return NextResponse.json({emails,sources:{enabled:["AFPBB","FNN","マイナビニュース","ITmedia","日経メール"]}},{headers:{"Cache-Control":"no-store","x-news-debug-id":debugId}});
   }catch(e){
+    mark("API_ERROR",{error:e instanceof Error?e.message:String(e)});
     console.error("[api/emails]",e);
     return NextResponse.json({error:e instanceof Error?e.message:"news_error"},{status:502,headers:{"Cache-Control":"no-store"}});
   }
