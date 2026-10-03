@@ -2,7 +2,7 @@ import { JSDOM } from "jsdom";
 
 export type NewsCategory = "politics"|"economy"|"business"|"international"|"market"|"technology"|"science"|"society"|"life"|"other";
 export type NewsArticle = {
-  id:string; source:"Yahoo!ニュース"|"FNN"|"マイナビニュース"|"ITmedia"|"日経"; title:string; url:string;
+  id:string; source:"Yahoo!ニュース"|"FNN"|"マイナビニュース"|"ITmedia"|"GIGAZINE"|"Web担当者Forum"|"日経"; title:string; url:string;
   publishedAt:string; updatedAt?:string; description?:string; content?:string; imageUrl?:string;
   category?:NewsCategory; primaryCategory?:NewsCategory; tags?:string[]; importanceScore?:number;
 };
@@ -13,7 +13,7 @@ export const RSS_FEEDS:FeedConfig[]=[
  {source:"Yahoo!ニュース",url:"https://news.yahoo.co.jp/rss/categories/world.xml",tags:["国際","外交","海外政治","世界経済","社会","科学","ライフ"]},
  {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/index"},
  {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/techplus/enterprise",categoryHint:"business",tags:["企業IT","企業","IT"]},
- {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/techplus/technology",categoryHint:"technology",tags:["テクノロジー"]},
+ {source:"GIGAZINE",url:"https://gigazine.net/news/rss_2.0/",categoryHint:"technology",tags:["テクノロジー","AI","セキュリティ"]},
  {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/techplus/technology/science",categoryHint:"science",tags:["サイエンス"]},
  {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/techplus/technology/aerospace",categoryHint:"science",tags:["宇宙・航空"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/itmedia_all.xml",tags:["ITmedia"]},
@@ -22,7 +22,7 @@ export const RSS_FEEDS:FeedConfig[]=[
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/aiplus.xml",categoryHint:"technology",tags:["AI"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/business.xml",categoryHint:"business",tags:["ビジネス"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/enterprise.xml",categoryHint:"business",tags:["エンタープライズ","セキュリティ","クラウド"]},
- {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/marketing.xml",categoryHint:"business",tags:["マーケティング"]},
+ {source:"Web担当者Forum",url:"https://webtan.impress.co.jp/rss.xml",categoryHint:"business",tags:["マーケティング","SEO","Web"]},
 ];
 
 // TBS NEWS DIGの現行公式サイトでは公式RSS URLを確認できないため、推測URLは登録しない。
