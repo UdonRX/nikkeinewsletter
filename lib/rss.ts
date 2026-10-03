@@ -312,30 +312,21 @@ function newsRankScore(article:NewsArticle,terms:string[]){
   return importanceRankScore(article,terms)+freshness;
 }
 export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
-  const ranked=articles.map(article=>{
+  const scored=articles.map(article=>{
     const trendScore=trendBoost(article,terms);
     const baseImportance=article.importanceScore||0;
-    return {article,score:baseImportance+trendScore,trendScore};
-  }).sort((a,b)=>b.score-a.score||(b.article.importanceScore||0)-(a.article.importanceScore||0)||new Date(b.article.publishedAt).getTime()-new Date(a.article.publishedAt).getTime());
-  const total=ranked.length;
-  const fiveLimit=Math.max(3,Math.ceil(total*0.01));
-  const fourLimit=Math.max(fiveLimit+5,Math.ceil(total*0.05));
-  const threeLimit=Math.max(fourLimit+10,Math.ceil(total*0.20));
-  const twoLimit=Math.max(threeLimit+20,Math.ceil(total*0.50));
-  const scored=ranked.map((entry,index)=>{
-    const rank=index+1;
-    const baseImportance=entry.article.importanceScore||0;
-    const stars=rank<=fiveLimit&&baseImportance>=13&&entry.score>=13?5:rank<=fourLimit&&baseImportance>=10&&entry.score>=10?4:rank<=threeLimit&&baseImportance>=6&&entry.score>=6?3:rank<=twoLimit&&baseImportance>=2&&entry.score>=2?2:1;
-    return {...entry.article,trendScore:entry.trendScore,importanceStars:stars};
+    const score=baseImportance+trendScore;
+    const stars=score>=13&&baseImportance>=13?5:score>=10&&baseImportance>=10?4:score>=6&&baseImportance>=6?3:score>=2&&baseImportance>=2?2:1;
+    return {...article,trendScore,importanceStars:stars};
   });
   const counts=Object.fromEntries([1,2,3,4,5].map(star=>[star,scored.filter(a=>a.importanceStars===star).length]));
   const trendMatchedCount=scored.filter(a=>(a.trendScore||0)>0).length;
-  const top10=scored.slice(0,10).map((a,index)=>{
+  const top10=scored.slice().sort((a,b)=>importanceRankScore(b,terms)-importanceRankScore(a,terms)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime()).slice(0,10).map((a,index)=>{
     const ageHours=Math.max(0,(Date.now()-new Date(a.publishedAt).getTime())/3600000);
     const freshness=Math.max(0,8-Math.min(8,ageHours/6));
     return {rank:index+1,stars:a.importanceStars,score:importanceRankScore(a,terms),baseImportance:a.importanceScore||0,trendScore:a.trendScore||0,freshness:Number(freshness.toFixed(2)),source:a.source,title:a.title};
   });
-  console.log("[STARS] THRESHOLD_CHECK",{total,rankLimits:{five:fiveLimit,four:fourLimit,three:threeLimit,two:twoLimit},absoluteGates:{five:"base>=13",four:"base>=10",three:"base>=6",two:"base>=2"},trendCap:{normal:6,liveSports:2},counts,trendMatched:trendMatchedCount});
+  console.log("[STARS] THRESHOLD_CHECK",{total:scored.length,absoluteGates:{five:"base>=13 and score>=13",four:"base>=10 and score>=10",three:"base>=6 and score>=6",two:"base>=2 and score>=2"},trendCap:{normal:6,liveSports:2},counts,trendMatched:trendMatchedCount});
   console.log("[STARS] COUNTS",JSON.stringify(counts));
   console.log("[STARS] TOP10",JSON.stringify(top10));
   return scored;
