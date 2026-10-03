@@ -282,16 +282,20 @@ export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
   });
   const counts=Object.fromEntries([1,2,3,4,5].map(star=>[star,scored.filter(a=>a.importanceStars===star).length]));
   const trendMatchedCount=scored.filter(a=>(a.trendScore||0)>0).length;
-  const top10=scored.slice(0,10).map((a,index)=>({
-    rank:index+1,
-    title:a.title,
-    source:a.source,
-    publishedAt:a.publishedAt,
-    score:newsRankScore(a,terms),
-    baseImportance:a.importanceScore||0,
-    trendScore:a.trendScore||0,
-    stars:a.importanceStars
-  }));
+  const top10=scored.slice(0,10).map((a,index)=>{
+    const ageHours=Math.max(0,(Date.now()-new Date(a.publishedAt).getTime())/3600000);
+    const freshness=Math.max(0,8-Math.min(8,ageHours/6));
+    return {
+      rank:index+1,
+      stars:a.importanceStars,
+      score:newsRankScore(a,terms),
+      baseImportance:a.importanceScore||0,
+      trendScore:a.trendScore||0,
+      freshness:Number(freshness.toFixed(2)),
+      source:a.source,
+      title:a.title
+    };
+  });
   console.log("[STARS] THRESHOLD_CHECK",{
     total,
     rankLimits:{five:fiveLimit,four:fourLimit,three:threeLimit,two:twoLimit},
