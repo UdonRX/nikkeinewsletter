@@ -110,24 +110,55 @@ async function fetchFeed(config:FeedConfig){
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   const label=config.source+" "+config.url;
   try{
-    console.log("[RSS] START",label);
+    console.log("[RSS] START",label,{startedAt:new Date().toISOString()});
+
+    // fetch()ではDNS/TCP/TLSを個別には取得できないため、
+    // responseHeadersMsに「DNS + TCP + TLS + 配信元サーバーの応答待ち」をまとめて記録する。
+    const networkStarted=Date.now();
     const r=await fetch(config.url,{next:{revalidate:60},signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1","Accept":"application/rss+xml, application/xml, text/xml, */*","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"}});
+    const responseHeadersMs=Date.now()-networkStarted;
     const contentType=r.headers.get("content-type")||"";
+    console.log("[RSS] RESPONSE",label,{
+      status:r.status,
+      ok:r.ok,
+      contentType,
+      responseHeadersMs,
+      note:"responseHeadersMs = DNS/TCP/TLS + server response wait"
+    });
+
+    const bodyStarted=Date.now();
     const xml=await r.text();
-    console.log("[RSS] HTTP",label,{status:r.status,ok:r.ok,contentType,bytes:xml.length});
+    const bodyMs=Date.now()-bodyStarted;
+    console.log("[RSS] BODY",label,{
+      bytes:xml.length,
+      bodyMs,
+      networkMs:responseHeadersMs+bodyMs
+    });
+
     if(!r.ok)throw new Error("HTTP "+r.status);
     if(!/<(?:rss|feed|rdf:RDF)\b/i.test(xml))throw new Error("XML root not recognized");
+
+    const parseStarted=Date.now();
     const articles=parseFeed(xml,config);
-    console.log("[RSS] PARSE",label,{articles:articles.length,durationMs:Date.now()-started});
+    const parseMs=Date.now()-parseStarted;
+    console.log("[RSS] PARSE",label,{
+      articles:articles.length,
+      parseMs,
+      totalMs:Date.now()-started
+    });
     return articles;
   }catch(error){
     if(error instanceof Error && error.name==="AbortError"){
-      console.error("[RSS] TIMEOUT",label,{timeoutMs});
+      console.error("[RSS] TIMEOUT",label,{
+        timeoutMs,
+        elapsedMs:Date.now()-started
+      });
     }
     console.error("[RSS] FAIL",label,{
       name:error instanceof Error?error.name:"unknown",
       message:error instanceof Error?error.message:String(error),
-      cause:error instanceof Error&&error.cause?String(error.cause):undefined
+      cause:error instanceof Error&&error.cause?String(error.cause):undefined,
+      elapsedMs:Date.now()-started
     });
     if(config.source==="AFPBB"){
       try{
