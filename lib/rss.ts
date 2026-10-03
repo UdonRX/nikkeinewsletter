@@ -40,12 +40,52 @@ const CATEGORY_RULES:Array<[NewsCategory,string[]]>=[
  ["life",["暮らし","生活","ライフ","健康","文化","食","旅行","働き方","キャリア"]]
 ];
 const IMPORTANCE_RULES:Array<[number,string[]]>=[
- [5,["首相","総理","政府","国会","重要政策","日銀","金融政策","政策金利","国際紛争","米中関係","戦争","停戦"]],
- [4,["為替","株式市場","日経平均","決算","大型M&A","買収","半導体","AI","重大事故","大規模災害","海外政治"]],
- [3,["企業","業績","経済","クラウド","セキュリティ","宇宙","科学","DX"]],
- [1,["ライフ","暮らし","文化","話題"]],
- [-2,["芸能","エンタメ","ゲーム","スポーツ"]]
+  [4,["首相","総理","政府","国会","内閣","日銀","金融政策","政策金利","戦争","停戦","国際紛争","米中関係"]],
+  [3,["法案","選挙","外交","為替","日経平均","株式市場","GDP","物価","利上げ","利下げ","重大事故","大規模災害","大規模被害"]],
+  [2,["決算","業績","買収","合併","M&A","半導体","サイバー","セキュリティ","宇宙","科学","経済","企業"]],
+  [1,["クラウド","AI","人工知能","生成AI","DX","IT","ソフトウェア","データ"]],
+  [-2,["芸能","エンタメ","ゲーム","スポーツ"]]
 ];
+
+const EVENT_BOOST_RULES:Array<[number,string[]]>=[
+  [5,["政策決定","政策を決定","法案成立","法案が成立","成立","承認","発動","施行","正式決定","決定した"]],
+  [4,["重大発表","大規模被害","死者","負傷者","逮捕","攻撃","侵攻","停戦合意","過去最大","過去最高","過去最悪","史上最高"]],
+  [3,["発表","決定","開始","終了","合意","提携","統合","再編","買収","合併","決算発表"]]
+];
+
+const EXPLANATORY_PENALTIES:Array<[number,string[]]>=[
+  [-2,["解説","コラム","識者が解説","専門家が解説","対話人生","考える","考察"]],
+  [-1,["とは？","なぜ？","どう向き合う","時代","読み解く","背景","ポイント"]]
+];
+
+function matchedKeywordScore(text:string,rules:Array<[number,string[]]>,cap:number){
+  const matched=new Set<string>();
+  const scores:number[]=[];
+  for(const [points,words] of rules){
+    for(const word of words){
+      if(text.includes(word)&&!matched.has(word)){
+        matched.add(word);
+        scores.push(points);
+      }
+    }
+  }
+  scores.sort((a,b)=>b-a);
+  return scores.slice(0,3).reduce((sum,points)=>sum+points,0)>cap?cap:scores.slice(0,3).reduce((sum,points)=>sum+points,0);
+}
+
+export function scoreArticle(title:string,description:string,category:NewsCategory){
+  const text=(title+" "+description).trim();
+  const categoryBase=category==="other"?0:1;
+  const keywordScore=matchedKeywordScore(text,IMPORTANCE_RULES,7);
+  const eventScore=matchedKeywordScore(text,EVENT_BOOST_RULES,7);
+  const explanatoryPenalty=matchedKeywordScore(text,EXPLANATORY_PENALTIES,0);
+  const isLiveSports=/速報|試合途中|試合開始前|試合結果|試合速報|プロ野球|サッカー速報|スコア速報/.test(title);
+  const isMajorImpact=/政策決定|政策を決定|法案成立|重大発表|大規模被害|死者|攻撃|侵攻|停戦合意|過去最大|過去最高|過去最悪|史上最高/.test(text);
+  let score=categoryBase+keywordScore+eventScore+explanatoryPenalty;
+  if(isLiveSports)score=Math.min(score,2);
+  if(!isMajorImpact)score=Math.min(score,11);
+  return Math.max(-2,Math.min(15,score));
+}
 
 let activeParseMetrics:{decodeHtmlCalls:number;decodeHtmlMs:number;cleanTextCalls:number;cleanTextMs:number}|null=null;
 const HTML_ENTITIES:Record<string,string>={amp:"&",lt:"<",gt:">",quot:'"',apos:"'",nbsp:"\\u00a0",hellip:"…",ndash:"–",mdash:"—",laquo:"«",raquo:"»",copy:"©",reg:"®",trade:"™",yen:"¥",euro:"€"};
