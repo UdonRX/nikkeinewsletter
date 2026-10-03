@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fetchGdeltSignals } from "@/lib/gdelt";
 import { listNikkeiMessages, batchGetMessages, getProfileHistoryId, getHistoryChanges, extractMimeBody, header } from "@/lib/gmail";
 import { parseNikkeiEmail } from "@/lib/parser";
 import { refreshAccessToken } from "@/lib/google";
 import { getRefreshToken, setAccessToken } from "@/lib/session";
-import { fetchNewsArticles, fetchGoogleTrendTerms, applyImportanceStars, daypart, issueDate, toLegacyNews, inferCategory, scoreArticle } from "@/lib/rss";
+import { fetchNewsArticles, applyImportanceStars, daypart, issueDate, toLegacyNews, inferCategory, scoreArticle } from "@/lib/rss";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -129,9 +130,8 @@ export async function GET(req:NextRequest){
   const mark=(stage:string,extra:Record<string,unknown>={})=>console.log("[NEWS_LOAD]",stage,{debugId,elapsedMs:Date.now()-requestStarted,...extra});
   mark("API_START");
   try{
-    const trendStarted=Date.now(),rssStarted=Date.now(),tokenStarted=Date.now();
-    const [trendTerms,rssArticles,accessToken]=await Promise.all([fetchGoogleTrendTerms(),fetchNewsArticles(),token(req)]);
-    mark("TRENDS_DONE",{durationMs:Date.now()-trendStarted,terms:trendTerms.length});
+    const rssStarted=Date.now(),tokenStarted=Date.now();
+    const [rssArticles,accessToken]=await Promise.all([fetchNewsArticles(),token(req)]);
     mark("RSS_DONE",{durationMs:Date.now()-rssStarted,articles:rssArticles.length});
     mark("TOKEN_DONE",{durationMs:Date.now()-tokenStarted,connected:Boolean(accessToken)});
     let nikkei:any[]=[]; let nikkeiEmails:any[]=[]; let gmailSync:any={historyId:"",deletedIds:[],fullSync:true};
@@ -159,11 +159,12 @@ export async function GET(req:NextRequest){
 
     const starsStarted=Date.now();
     const allForStars=[...nikkei.flatMap((article:any)=>[article]),...rssEmails.flatMap((email:any)=>email.news.map((news:any)=>news))];
-    const starred=applyImportanceStars(allForStars.map((article:any)=>({id:article.id,source:article.source,title:article.title,url:article.url||"",publishedAt:article.publishedAt||new Date().toISOString(),description:article.description||article.body||"",content:article.content||article.body||"",category:article.category,primaryCategory:article.primaryCategory||article.category,tags:article.tags,importanceScore:article.importanceScore||0})),trendTerms);
+    const gdeltSignals=await fetchGdeltSignals(allForStars.map((article:any)=>({id:article.id,title:article.title})));
+    const starred=applyImportanceStars(allForStars.map((article:any)=>({id:article.id,source:article.source,title:article.title,url:article.url||"",publishedAt:article.publishedAt||new Date().toISOString(),description:article.description||article.body||"",content:article.content||article.body||"",category:article.category,primaryCategory:article.primaryCategory||article.category,tags:article.tags,importanceScore:article.importanceScore||0})));
     mark("STARS_DONE",{durationMs:Date.now()-starsStarted,articles:allForStars.length});
     const starMap=new Map(starred.map((article:any)=>[article.id,article]));
-    for(const email of nikkeiEmails)for(const news of email.news){const scored=starMap.get(news.id);if(scored){news.trendScore=scored.trendScore;news.importanceStars=scored.importanceStars;}}
-    for(const email of rssEmails)for(const news of email.news as any[]){const scored=starMap.get(news.id);if(scored){news.trendScore=scored.trendScore;news.importanceStars=scored.importanceStars;}}
+    for(const email of nikkeiEmails)for(const news of email.news){const scored=starMap.get(news.id);if(scored){news.trendScore=0;news.importanceStars=scored.importanceStars;const gdelt=gdeltSignals.get(news.id);if(gdelt)Object.assign(news,{gdeltHit:gdelt.hit,gdeltCount1h:gdelt.count1h,gdeltCount3h:gdelt.count3h,gdeltCount6h:gdelt.count6h,gdeltCount24h:gdelt.count24h,gdeltGrowth1hTo3h:gdelt.growth1hTo3h,gdeltGrowth3hTo6h:gdelt.growth3hTo6h,gdeltResponseMs:gdelt.responseMs,gdeltJapaneseTitleHit:gdelt.japaneseTitleHit});}}
+    for(const email of rssEmails)for(const news of email.news as any[]){const scored=starMap.get(news.id);if(scored){news.trendScore=0;news.importanceStars=scored.importanceStars;const gdelt=gdeltSignals.get(news.id);if(gdelt)Object.assign(news,{gdeltHit:gdelt.hit,gdeltCount1h:gdelt.count1h,gdeltCount3h:gdelt.count3h,gdeltCount6h:gdelt.count6h,gdeltCount24h:gdelt.count24h,gdeltGrowth1hTo3h:gdelt.growth1hTo3h,gdeltGrowth3hTo6h:gdelt.growth3hTo6h,gdeltResponseMs:gdelt.responseMs,gdeltJapaneseTitleHit:gdelt.japaneseTitleHit});}}
     const emails=[...nikkeiEmails,...rssEmails].sort((a,b)=>Number(b.internalDate||0)-Number(a.internalDate||0));
     const displayCounts=Object.fromEntries(["AFPBB","FNN","マイナビニュース","ITmedia","日経"].map(source=>[source,emails.reduce((n:number,email:any)=>n+email.news.filter((news:any)=>news.source===source).length,0)]));
     const rssDisplayCounts=Object.fromEntries(["AFPBB","FNN","マイナビニュース","ITmedia"].map(source=>[source,rssEmails.reduce((n:number,email:any)=>n+email.news.filter((news:any)=>news.source===source).length,0)]));

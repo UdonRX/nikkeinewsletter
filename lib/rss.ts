@@ -231,88 +231,46 @@ async function fetchFeed(config:FeedConfig){
   }
 }
 
-export async function fetchGoogleTrendTerms(){
-  const url="https://trends.google.com/trending/rss?geo=JP";
-  const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),10000);
-  try{
-    const r=await fetch(url,{signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0","Accept":"application/rss+xml,application/xml,text/xml,*/*","Accept-Language":"ja-JP,ja;q=0.9"}});
-    const xml=await r.text();
-    if(!r.ok)throw new Error("HTTP "+r.status);
-    const doc=new JSDOM(xml).window.document;
-    const terms=Array.from(doc.querySelectorAll("item > title, entry > title")).map(el=>cleanText(el.textContent||"")).filter(v=>v.length>=2);
-    console.log("[TRENDS] SUMMARY",{status:r.status,bytes:xml.length,terms:terms.length,topTerms:terms.slice(0,20)});
-    return terms;
-  }catch(error){
-    return [];
-  }finally{ clearTimeout(timer); }
-}
-function trendBoost(article:NewsArticle,terms:string[]){
-  if(!terms.length)return 0;
-  const text=(article.title+" "+(article.description||"")).toLowerCase();
-  let hits=0;
-  for(const term of terms){const t=term.toLowerCase().trim();if(t&&text.includes(t))hits++;}
-  return Math.min(12,hits*6);
-}
-function newsRankScore(article:NewsArticle,terms:string[]){
+
+function newsRankScore(article:NewsArticle){
   const ageHours=Math.max(0,(Date.now()-new Date(article.publishedAt).getTime())/3600000);
   const freshness=Math.max(0,8-Math.min(8,ageHours/6));
-  return (article.importanceScore||0)+trendBoost(article,terms)+freshness;
+  return (article.importanceScore||0)+freshness;
 }
 const STAR_THRESHOLDS={five:20,four:14,three:9,two:5} as const;
 
-export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
-  const ranked=articles.map(article=>({
-    article,
-    score:newsRankScore(article,terms),
-    trendScore:trendBoost(article,terms)
-  })).sort((a,b)=>b.score-a.score);
-
+export function applyImportanceStars(articles:NewsArticle[]){
+  const ranked=articles.map(article=>({article,score:newsRankScore(article)})).sort((a,b)=>b.score-a.score);
   const scored=ranked.map(entry=>{
     const stars=entry.score>=STAR_THRESHOLDS.five?5:
       entry.score>=STAR_THRESHOLDS.four?4:
       entry.score>=STAR_THRESHOLDS.three?3:
       entry.score>=STAR_THRESHOLDS.two?2:1;
-    return {...entry.article,trendScore:entry.trendScore,importanceStars:stars};
+    return {...entry.article,importanceStars:stars};
   });
-
   const counts=Object.fromEntries([1,2,3,4,5].map(star=>[star,scored.filter(a=>a.importanceStars===star).length]));
   const ranges=Object.fromEntries([1,2,3,4,5].map(star=>{
-    const values=scored.filter(a=>a.importanceStars===star).map(a=>(a.importanceScore||0)+(a.trendScore||0));
+    const values=scored.filter(a=>a.importanceStars===star).map(a=>newsRankScore(a));
     return [star,values.length?{min:Math.min(...values),max:Math.max(...values)}:{min:null,max:null}];
   }));
-  const trendMatched=scored.filter(a=>(a.trendScore||0)>0).length;
   console.log("[STARS] THRESHOLD_CHECK",{
     thresholds:STAR_THRESHOLDS,
     total:scored.length,
     counts,
     ranges,
-    trendMatched,
-    top10:scored.slice(0,10).map(a=>({
-      title:a.title,
-      score:(a.importanceScore||0)+(a.trendScore||0),
-      trendScore:a.trendScore||0,
-      stars:a.importanceStars
-    }))
+    top10:scored.slice(0,10).map(a=>({title:a.title,score:newsRankScore(a),stars:a.importanceStars}))
   });
-
   return scored;
 }
-function selectAllRssArticles(articles:NewsArticle[],terms:string[]){
-  const selected=articles.slice().sort((a,b)=>newsRankScore(b,terms)-newsRankScore(a,terms)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
+function selectAllRssArticles(articles:NewsArticle[]){
+  const selected=articles.slice().sort((a,b)=>newsRankScore(b)-newsRankScore(a)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
   return selected;
 }
 
-export async function fetchNewsArticles(trendTermsInput?:string[]){
-  const started=Date.now();
+export async function fetchNewsArticles(){
   const results=await Promise.allSettled(RSS_FEEDS.map(fetchFeed));
-  const failed=results.filter(r=>r.status==="rejected").length;
-  const fetched=results.filter(r=>r.status==="fulfilled").reduce((n,r)=>n+r.value.length,0);
   const articles=results.flatMap(r=>r.status==="fulfilled"?r.value:[]).sort((a,b)=>(b.importanceScore||0)-(a.importanceScore||0)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
-  const trendTerms=trendTermsInput??await fetchGoogleTrendTerms();
-  const displayed=selectAllRssArticles(articles,trendTerms);
-  const sourceCounts=Object.fromEntries(["Yahoo!ニュース","FNN","マイナビニュース","ITmedia"].map(source=>[source,displayed.filter(a=>a.source===source).length]));
-  return displayed;
+  return selectAllRssArticles(articles);
 }
 export function daypart(iso:string){const h=Number(new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",hour:"2-digit",hour12:false}).format(new Date(iso)));return h>=5&&h<11?"朝刊" as const:h>=11&&h<17?"昼刊" as const:"夕刊" as const;}
 export function issueDate(iso:string){const p=new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date(iso));return `${p.find(x=>x.type==="year")?.value||"1970"}-${p.find(x=>x.type==="month")?.value||"01"}-${p.find(x=>x.type==="day")?.value||"01"}`;}
