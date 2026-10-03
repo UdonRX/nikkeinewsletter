@@ -2,7 +2,7 @@ import { JSDOM } from "jsdom";
 
 export type NewsCategory = "politics"|"economy"|"business"|"international"|"market"|"technology"|"science"|"society"|"life"|"other";
 export type NewsArticle = {
-  id:string; source:"Yahoo!ニュース"|"FNN"|"マイナビニュース"|"ITmedia"|"GIGAZINE"|"Web担当者Forum"|"日経"; title:string; url:string;
+  id:string; source:"Yahoo!ニュース"|"FNN"|"マイナビニュース"|"ITmedia"|"GIGAZINE"|"AdverTimes."|"日経"; title:string; url:string;
   publishedAt:string; updatedAt?:string; description?:string; content?:string; imageUrl?:string;
   category?:NewsCategory; primaryCategory?:NewsCategory; tags?:string[]; importanceScore?:number;
 };
