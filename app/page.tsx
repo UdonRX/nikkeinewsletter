@@ -52,10 +52,20 @@ export default function Home(){
     if(typeof window!=="undefined")setGmailConnected(new URLSearchParams(window.location.search).get("connected")==="1");
   },[]);
   useEffect(()=>{
-    fetch("/api/emails",{cache:"no-store"})
-      .then(async r=>{const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||"ニュースを取得できませんでした");setEmails(data.emails||[]);})
-      .catch(e=>setError(e instanceof Error?e.message:"ニュースを取得できませんでした"))
-      .finally(()=>setLoading(false));
+    const started=performance.now();
+    const debugId=crypto.randomUUID();
+    console.log("[NEWS_LOAD] START",{debugId});
+    fetch("/api/emails",{cache:"no-store",headers:{"x-news-debug-id":debugId}})
+      .then(async r=>{
+        console.log("[NEWS_LOAD] HTTP",{debugId,status:r.status,ok:r.ok,elapsedMs:Math.round(performance.now()-started)});
+        const jsonStarted=performance.now();
+        const data=await r.json().catch(()=>({}));
+        console.log("[NEWS_LOAD] JSON_PARSED",{debugId,elapsedMs:Math.round(performance.now()-jsonStarted),totalMs:Math.round(performance.now()-started),emailCount:Array.isArray(data.emails)?data.emails.length:0,articleCount:Array.isArray(data.emails)?data.emails.reduce((n:number,e:Email)=>n+(e.news?.length||0),0):0});
+        if(!r.ok)throw new Error(data.error||"ニュースを取得できませんでした");
+        setEmails(data.emails||[]);
+      })
+      .catch(e=>{console.error("[NEWS_LOAD] ERROR",{debugId,error:e instanceof Error?e.message:String(e),elapsedMs:Math.round(performance.now()-started)});setError(e instanceof Error?e.message:"ニュースを取得できませんでした");})
+      .finally(()=>{console.log("[NEWS_LOAD] FINISH",{debugId,totalMs:Math.round(performance.now()-started)});setLoading(false);});
   },[]);
 
   const timeline=useMemo(()=>{
