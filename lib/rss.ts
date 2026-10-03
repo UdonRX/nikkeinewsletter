@@ -145,23 +145,6 @@ function parseFeed(xml:string,config:FeedConfig):NewsArticle[]{
     const filterStarted=Date.now();
     const filtered=mapped.filter(a=>a.title!=="無題"&&/^https?:\/\//i.test(a.url));
     metrics.filterMs=Date.now()-filterStarted;
-    console.log("[RSS] PARSE_DETAIL",config.source,{
-      blocks:blocks.length,
-      articles:filtered.length,
-      blockExtractionMs:metrics.blockExtractionMs,
-      mapMs:metrics.mapMs,
-      filterMs:metrics.filterMs,
-      fieldRegexMs:metrics.fieldRegexMs,
-      attrRegexMs:metrics.attrRegexMs,
-      dateParseMs:metrics.dateParseMs,
-      categoryMs:metrics.categoryMs,
-      scoreMs:metrics.scoreMs,
-      imageMs:metrics.imageMs,
-      decodeHtmlCalls:metrics.decodeHtmlCalls,
-      decodeHtmlMs:metrics.decodeHtmlMs,
-      cleanTextCalls:metrics.cleanTextCalls,
-      cleanTextMs:metrics.cleanTextMs
-    });
     return filtered;
   }finally{
     activeParseMetrics=null;
@@ -172,10 +155,8 @@ async function fetchHtmlFallback(config:FeedConfig,fallbackUrl:string){
   const timeoutMs=15000;
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-    console.log("[RSS] FALLBACK_START",config.source,fallbackUrl);
     const r=await fetch(fallbackUrl,{signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1","Accept":"text/html,application/xhtml+xml","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"}});
     const html=await r.text();
-    console.log("[RSS] FALLBACK_HTTP",config.source,{status:r.status,ok:r.ok,contentType:r.headers.get("content-type")||"",bytes:html.length});
     if(!r.ok)throw new Error("HTTP "+r.status);
     const doc=new JSDOM(html).window.document;
     const articles:NewsArticle[]=[];
@@ -204,7 +185,6 @@ async function fetchHtmlFallback(config:FeedConfig,fallbackUrl:string){
       });
       if(articles.length>=80)break;
     }
-    console.log("[RSS] FALLBACK_PARSE",config.source,{articles:articles.length});
     return articles;
   }finally{
     clearTimeout(timer);
@@ -217,7 +197,6 @@ async function fetchFeed(config:FeedConfig){
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   const label=config.source+" "+config.url;
   try{
-    console.log("[RSS] START",label,{startedAt:new Date().toISOString()});
 
     // fetch()ではDNS/TCP/TLSを個別には取得できないため、
     // responseHeadersMsに「DNS + TCP + TLS + 配信元サーバーの応答待ち」をまとめて記録する。
@@ -225,22 +204,10 @@ async function fetchFeed(config:FeedConfig){
     const r=await fetch(config.url,{next:{revalidate:60},signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1","Accept":"application/rss+xml, application/xml, text/xml, */*","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"}});
     const responseHeadersMs=Date.now()-networkStarted;
     const contentType=r.headers.get("content-type")||"";
-    console.log("[RSS] RESPONSE",label,{
-      status:r.status,
-      ok:r.ok,
-      contentType,
-      responseHeadersMs,
-      note:"responseHeadersMs = DNS/TCP/TLS + server response wait"
-    });
 
     const bodyStarted=Date.now();
     const xml=await r.text();
     const bodyMs=Date.now()-bodyStarted;
-    console.log("[RSS] BODY",label,{
-      bytes:xml.length,
-      bodyMs,
-      networkMs:responseHeadersMs+bodyMs
-    });
 
     if(!r.ok)throw new Error("HTTP "+r.status);
     if(!/<(?:rss|feed|rdf:RDF)\b/i.test(xml))throw new Error("XML root not recognized");
@@ -248,36 +215,19 @@ async function fetchFeed(config:FeedConfig){
     const parseStarted=Date.now();
     const articles=parseFeed(xml,config);
     const parseMs=Date.now()-parseStarted;
-    console.log("[RSS] PARSE",label,{
-      articles:articles.length,
-      parseMs,
-      totalMs:Date.now()-started
-    });
     return articles;
   }catch(error){
     if(error instanceof Error && error.name==="AbortError"){
-      console.error("[RSS] TIMEOUT",label,{
-        timeoutMs,
-        elapsedMs:Date.now()-started
-      });
     }
-    console.error("[RSS] FAIL",label,{
-      name:error instanceof Error?error.name:"unknown",
-      message:error instanceof Error?error.message:String(error),
-      cause:error instanceof Error&&error.cause?String(error.cause):undefined,
-      elapsedMs:Date.now()-started
-    });
     if(config.source==="FNN"){
       try{
         return await fetchHtmlFallback(config,"https://www.fnn.jp/list/latest?device=smartphone");
       }catch(fallbackError){
-        console.error("[RSS] FALLBACK_FAIL",config.source,{message:fallbackError instanceof Error?fallbackError.message:String(fallbackError)});
       }
     }
     throw error;
   } finally {
     clearTimeout(timer);
-    console.log("[RSS] DONE",label,{durationMs:Date.now()-started});
   }
 }
 
@@ -294,7 +244,6 @@ export async function fetchGoogleTrendTerms(){
     console.log("[TRENDS] SUMMARY",{status:r.status,bytes:xml.length,terms:terms.length,topTerms:terms.slice(0,20)});
     return terms;
   }catch(error){
-    console.warn("[TRENDS] FAIL",{message:error instanceof Error?error.message:String(error)});
     return [];
   }finally{ clearTimeout(timer); }
 }
@@ -310,20 +259,52 @@ function newsRankScore(article:NewsArticle,terms:string[]){
   const freshness=Math.max(0,8-Math.min(8,ageHours/6));
   return (article.importanceScore||0)+trendBoost(article,terms)+freshness;
 }
+const STAR_THRESHOLDS={five:20,four:14,three:9,two:5} as const;
+
 export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
-  const ranked=articles.map(article=>({article,score:newsRankScore(article,terms),trendScore:trendBoost(article,terms)})).sort((a,b)=>b.score-a.score);
-  const n=ranked.length;
-  return ranked.map((entry,i)=>({...entry.article,trendScore:entry.trendScore,importanceStars:n<=1?5:i<Math.ceil(n*.10)?5:i<Math.ceil(n*.25)?4:i<Math.ceil(n*.50)?3:i<Math.ceil(n*.75)?2:1}));
+  const ranked=articles.map(article=>({
+    article,
+    score:newsRankScore(article,terms),
+    trendScore:trendBoost(article,terms)
+  })).sort((a,b)=>b.score-a.score);
+
+  const scored=ranked.map(entry=>{
+    const stars=entry.score>=STAR_THRESHOLDS.five?5:
+      entry.score>=STAR_THRESHOLDS.four?4:
+      entry.score>=STAR_THRESHOLDS.three?3:
+      entry.score>=STAR_THRESHOLDS.two?2:1;
+    return {...entry.article,trendScore:entry.trendScore,importanceStars:stars};
+  });
+
+  const counts=Object.fromEntries([1,2,3,4,5].map(star=>[star,scored.filter(a=>a.importanceStars===star).length]));
+  const ranges=Object.fromEntries([1,2,3,4,5].map(star=>{
+    const values=scored.filter(a=>a.importanceStars===star).map(a=>(a.importanceScore||0)+(a.trendScore||0));
+    return [star,values.length?{min:Math.min(...values),max:Math.max(...values)}:{min:null,max:null}];
+  }));
+  const trendMatched=scored.filter(a=>(a.trendScore||0)>0).length;
+  console.log("[STARS] THRESHOLD_CHECK",{
+    thresholds:STAR_THRESHOLDS,
+    total:scored.length,
+    counts,
+    ranges,
+    trendMatched,
+    top10:scored.slice(0,10).map(a=>({
+      title:a.title,
+      score:(a.importanceScore||0)+(a.trendScore||0),
+      trendScore:a.trendScore||0,
+      stars:a.importanceStars
+    }))
+  });
+
+  return scored;
 }
 function selectAllRssArticles(articles:NewsArticle[],terms:string[]){
   const selected=articles.slice().sort((a,b)=>newsRankScore(b,terms)-newsRankScore(a,terms)||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
-  console.log("[RSS] ALL_SELECTION",{total:selected.length,trendMatched:selected.filter(a=>trendBoost(a,terms)>0).length});
   return selected;
 }
 
 export async function fetchNewsArticles(trendTermsInput?:string[]){
   const started=Date.now();
-  console.log("[RSS] FETCH_ALL_START",{feeds:RSS_FEEDS.length});
   const results=await Promise.allSettled(RSS_FEEDS.map(fetchFeed));
   const failed=results.filter(r=>r.status==="rejected").length;
   const fetched=results.filter(r=>r.status==="fulfilled").reduce((n,r)=>n+r.value.length,0);
@@ -331,16 +312,6 @@ export async function fetchNewsArticles(trendTermsInput?:string[]){
   const trendTerms=trendTermsInput??await fetchGoogleTrendTerms();
   const displayed=selectAllRssArticles(articles,trendTerms);
   const sourceCounts=Object.fromEntries(["Yahoo!ニュース","FNN","マイナビニュース","ITmedia"].map(source=>[source,displayed.filter(a=>a.source===source).length]));
-  console.log("[RSS] SUMMARY",{
-    totalDurationMs:Date.now()-started,
-    feeds:RSS_FEEDS.length,
-    failed,
-    succeeded:RSS_FEEDS.length-failed,
-    parsedArticles:fetched,
-    displayedArticles:displayed.length,
-    sourceCounts,
-    trendTerms:trendTerms.length
-  });
   return displayed;
 }
 export function daypart(iso:string){const h=Number(new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",hour:"2-digit",hour12:false}).format(new Date(iso)));return h>=5&&h<11?"朝刊" as const:h>=11&&h<17?"昼刊" as const:"夕刊" as const;}

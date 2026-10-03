@@ -30,7 +30,7 @@ function mergeGmailEmails(cached:Email[],incoming:Email[],deletedIds:string[],fu
 function dateKey(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return "";const p=new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(d);return `${p.find(x=>x.type==="year")?.value}-${p.find(x=>x.type==="month")?.value}-${p.find(x=>x.type==="day")?.value}`;}
 function displayDate(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return value;return new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",month:"long",day:"numeric",weekday:"short"}).format(d);}
 function timeOf(value?:string){if(!value)return "--:--";const d=new Date(value);if(Number.isNaN(d.getTime()))return "--:--";return new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",hour:"2-digit",minute:"2-digit",hour12:false}).format(d);}
-function stars(count=1){const n=Math.max(1,Math.min(5,count));return "★".repeat(n)+"☆".repeat(5-n);}
+function stars(count=1){const n=Math.max(1,Math.min(5,count));return "★".repeat(n);}
 function tinySummary(body:string,title:string){const text=(body||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();if(!text)return "";return text.length>24?text.slice(0,24)+"…":text;}
 
 export default function Home(){
