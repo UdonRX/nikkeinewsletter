@@ -254,6 +254,10 @@ async function fetchFeed(config:FeedConfig){
     const parseStarted=Date.now();
     const articles=parseFeed(xml,config);
     const parseMs=Date.now()-parseStarted;
+    const latestArticles=articles.slice().sort((a,b)=>new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
+    const latest=latestArticles[0];
+    const oldest=latestArticles[latestArticles.length-1];
+    console.log("[RSS] FEED_RESULT",JSON.stringify({source:config.source,url:config.url,status:r.status,contentType,bytes:xml.length,responseHeadersMs,bodyMs,parseMs,articleCount:articles.length,latestPublishedAt:latest?.publishedAt||null,latestTitle:latest?.title||null,oldestPublishedAt:oldest?.publishedAt||null,oldestTitle:oldest?.title||null}));
     return articles;
   }catch(error){
     if(error instanceof Error && error.name==="AbortError"){
