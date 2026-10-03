@@ -134,7 +134,7 @@ function parseFeed(xml:string,config:FeedConfig):NewsArticle[]{
       metrics.attrRegexMs+=urlMs;
       void updatedAt;
 
-      return{id:`${config.source}:${url||normalizeTitle(title)}:${i}`,source:config.source,title,url,publishedAt,updatedAt,description,content,imageUrl:imageUrl||undefined,category,primaryCategory:category,tags,importanceScore};
+      return{id:`${config.source}:${url||title}:${i}`,source:config.source,title,url,publishedAt,updatedAt,description,content,imageUrl:imageUrl||undefined,category,primaryCategory:category,tags,importanceScore};
     });
     metrics.mapMs=Date.now()-mapStarted;
     const filterStarted=Date.now();
