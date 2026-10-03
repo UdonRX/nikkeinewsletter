@@ -74,33 +74,50 @@ async function getNikkeiNews(accessToken:string){
   const ids=await listNikkeiMessages(accessToken);
   console.log("[GMAIL] MESSAGE_COUNT",ids.length);
   const emails:any[]=[]; const articles:any[]=[];
-  for(const m of ids.slice(0,30)){
-    const full=await getMessage(accessToken,m.id!);
-    const from=header(full,"From"); const sender=from.toLowerCase();
-    const dateHeader=header(full,"Date")??"";
-    const {html,text}=await extractMimeBody(accessToken,m.id!,full.payload);
-    const contentForEdition=html||text||"";
-    const edition=editionInfo(full.internalDate??undefined,dateHeader,contentForEdition);
-    const publishedAt=full.internalDate ? new Date(Number(full.internalDate)).toISOString() : new Date(dateHeader).toISOString();
-    const kind=sender.includes("sokuho-news@mx.nikkei.com")?"速報":edition.kind;
-    const parsedEmail=parseNikkeiEmail(html,text);
-    const parsedArticles=parseNikkeiNews(html,text,m.id!,articles.length,publishedAt);
-    console.log("[GMAIL] MESSAGE",{
-      id:m.id,
-      from,
-      kind,
-      subject:header(full,"Subject"),
-      emailParserArticles:parsedEmail.length,
-      validArticles:parsedArticles.length,
-      hasHtml:Boolean(html),
-      hasText:Boolean(text)
-    });
-    emails.push({
-      id:m.id,threadId:m.threadId,from,kind,subject:header(full,"Subject"),
-      receivedAt:dateHeader,internalDate:full.internalDate||"",issueDate:edition.issueDate,
-      snippet:full.snippet||"",newsCount:parsedArticles.length,news:parsedArticles
-    });
-    articles.push(...parsedArticles);
+  const targets=ids.slice(0,30);
+  const concurrency=5;
+  console.log("[GMAIL] PARALLEL_START",{messages:targets.length,concurrency});
+
+  for(let start=0;start<targets.length;start+=concurrency){
+    const batch=targets.slice(start,start+concurrency);
+    const batchStarted=Date.now();
+    const results=await Promise.all(batch.map(async m=>{
+      const messageStarted=Date.now();
+      const full=await getMessage(accessToken,m.id!);
+      const from=header(full,"From"); const sender=from.toLowerCase();
+      const dateHeader=header(full,"Date")??"";
+      const {html,text}=await extractMimeBody(accessToken,m.id!,full.payload);
+      const contentForEdition=html||text||"";
+      const edition=editionInfo(full.internalDate??undefined,dateHeader,contentForEdition);
+      const publishedAt=full.internalDate ? new Date(Number(full.internalDate)).toISOString() : new Date(dateHeader).toISOString();
+      const kind=sender.includes("sokuho-news@mx.nikkei.com")?"速報":edition.kind;
+      const parsedEmail=parseNikkeiEmail(html,text);
+      const parsedArticles=parseNikkeiNews(html,text,m.id!,0,publishedAt);
+      console.log("[GMAIL] MESSAGE",{
+        id:m.id,
+        from,
+        kind,
+        subject:header(full,"Subject"),
+        emailParserArticles:parsedEmail.length,
+        validArticles:parsedArticles.length,
+        hasHtml:Boolean(html),
+        hasText:Boolean(text),
+        durationMs:Date.now()-messageStarted
+      });
+      return {
+        email:{
+          id:m.id,threadId:m.threadId,from,kind,subject:header(full,"Subject"),
+          receivedAt:dateHeader,internalDate:full.internalDate||"",issueDate:edition.issueDate,
+          snippet:full.snippet||"",newsCount:parsedArticles.length,news:parsedArticles
+        },
+        articles:parsedArticles
+      };
+    }));
+    for(const result of results){
+      emails.push(result.email);
+      articles.push(...result.articles);
+    }
+    console.log("[GMAIL] BATCH_DONE",{start,count:batch.length,durationMs:Date.now()-batchStarted});
   }
   console.log("[GMAIL] SUMMARY",{
     messages:ids.length,
@@ -133,16 +150,18 @@ export async function GET(req:NextRequest){
   mark("API_START");
   try{
     const trendStarted=Date.now();
-    const trendTerms=await fetchGoogleTrendTerms();
-    mark("TRENDS_DONE",{durationMs:Date.now()-trendStarted,terms:trendTerms.length});
     const rssStarted=Date.now();
-    const rssArticles=await fetchNewsArticles(trendTerms);
+    const tokenStarted=Date.now();
+    const [trendTerms,rssArticles,accessToken]=await Promise.all([
+      fetchGoogleTrendTerms(),
+      fetchNewsArticles(),
+      token(req),
+    ]);
+    mark("TRENDS_DONE",{durationMs:Date.now()-trendStarted,terms:trendTerms.length});
     mark("RSS_DONE",{durationMs:Date.now()-rssStarted,articles:rssArticles.length});
+    mark("TOKEN_DONE",{durationMs:Date.now()-tokenStarted,connected:Boolean(accessToken)});
     let nikkei:any[]=[];
     let nikkeiEmails:any[]=[];
-    const tokenStarted=Date.now();
-    const accessToken=await token(req);
-    mark("TOKEN_DONE",{durationMs:Date.now()-tokenStarted,connected:Boolean(accessToken)});
     console.log("[GMAIL] STATUS",accessToken?"connected":"not_connected");
     if(accessToken){
       try {
