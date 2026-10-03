@@ -187,7 +187,6 @@ async function fetchHtmlFallback(config:FeedConfig,fallbackUrl:string){
       const url=new URL(href,fallbackUrl).toString();
       if(!/^https?:\/\//i.test(url)||seen.has(url))continue;
       if(config.source==="FNN"&&!/\/articles\//i.test(url))continue;
-      if(config.source==="AFPBB"&&!/\/articles\/-\//i.test(url))continue;
       seen.add(url);
       const category=inferCategory(title,"",config.categoryHint);
       articles.push({
@@ -268,13 +267,6 @@ async function fetchFeed(config:FeedConfig){
       cause:error instanceof Error&&error.cause?String(error.cause):undefined,
       elapsedMs:Date.now()-started
     });
-    if(config.source==="AFPBB"){
-      try{
-        return await fetchHtmlFallback(config,"https://www.afpbb.com/list/latest");
-      }catch(fallbackError){
-        console.error("[RSS] FALLBACK_FAIL",config.source,{message:fallbackError instanceof Error?fallbackError.message:String(fallbackError)});
-      }
-    }
     if(config.source==="FNN"){
       try{
         return await fetchHtmlFallback(config,"https://www.fnn.jp/list/latest?device=smartphone");
