@@ -22,7 +22,7 @@ export const RSS_FEEDS:FeedConfig[]=[
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/aiplus.xml",categoryHint:"technology",tags:["AI"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/business.xml",categoryHint:"business",tags:["ビジネス"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/enterprise.xml",categoryHint:"business",tags:["エンタープライズ","セキュリティ","クラウド"]},
- {source:"Web担当者Forum",url:"https://webtan.impress.co.jp/rss.xml",categoryHint:"business",tags:["マーケティング","SEO","Web"]},
+ {source:"AdverTimes.",url:"https://www.advertimes.com/news/feed",categoryHint:"business",tags:["マーケティング","広告","ブランド","SNS"]},
 ];
 
 // TBS NEWS DIGの現行公式サイトでは公式RSS URLを確認できないため、推測URLは登録しない。
