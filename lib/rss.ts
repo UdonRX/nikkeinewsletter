@@ -317,7 +317,7 @@ export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
     const baseImportance=article.importanceScore||0;
     const score=baseImportance+trendScore;
     const stars=score>=13&&baseImportance>=13?5:score>=10&&baseImportance>=10?4:score>=6&&baseImportance>=6?3:score>=2&&baseImportance>=2?2:1;
-    return {...article,trendScore,importanceStars:stars};
+    return {...article,trendScore,importanceStars:stars,score,baseImportance};
   });
   const gates=[
     {stars:5,minBase:13,minScore:13},
