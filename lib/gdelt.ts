@@ -6,7 +6,10 @@ export type GdeltSignal={
   japaneseTitle:boolean; japaneseTitleHit:0|1; fetchedAt:number;
 };
 
-const MAX_CONCURRENCY=2;
+const MAX_CONCURRENCY=1;
+const MAX_NEW_PER_REQUEST=3;
+const REQUEST_INTERVAL_MS=2500;
+const REQUEST_TIMEOUT_MS=12000;
 const cache=new Map<string,GdeltSignal>();
 let gdeltNetworkRequests=0;
 
@@ -37,24 +40,24 @@ async function queryGdelt(title:string,japaneseTitle:boolean):Promise<GdeltSigna
   gdeltNetworkRequests++;
   const url="https://api.gdeltproject.org/api/v2/doc/doc?query="+encodeURIComponent('"'+title+'"')+"&mode=timelinevolraw&format=json&timespan=24h";
 
-  let lastError:unknown=null;
-  for(let attempt=0;attempt<2;attempt++){
-    const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),15000);
-    try{
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),REQUEST_TIMEOUT_MS);
+  try{
       const response=await fetch(url,{
         signal:controller.signal,
         headers:{"User-Agent":"nikkeinewsletter/1.0","Accept":"application/json"},
       });
-      if(response.status===429&&attempt===0){
-        await sleep(1200);
-        continue;
+      if(response.status===429){
+        console.warn("[GDELT] RATE_LIMIT_429",{title,japaneseTitle,responseMs:Date.now()-started,status:429});
+        throw new Error("GDELT_429");
       }
-      if(!response.ok)throw new Error("HTTP "+response.status);
+      if(!response.ok)throw new Error("GDELT_HTTP_"+response.status);
       const rows=parseTimeline(await response.json());
       const count1h=sumWindow(rows,1),count3h=sumWindow(rows,3),count6h=sumWindow(rows,6),count24h=sumWindow(rows,24);
+      const hit=count24h>0?1:0;
+      console.log("[GDELT] SEARCH_RESULT",{title,japaneseTitle,status:hit?"NORMAL_HIT":"NORMAL_ZERO",count24h,responseMs:Date.now()-started});
       return {
-        hit:count24h>0?1:0,
+        hit,
         count1h,count3h,count6h,count24h,
         growth1hTo3h:count3h-count1h,
         growth3hTo6h:count6h-count3h,
@@ -63,14 +66,15 @@ async function queryGdelt(title:string,japaneseTitle:boolean):Promise<GdeltSigna
         japaneseTitleHit:japaneseTitle&&count24h>0?1:0,
         fetchedAt:Date.now()
       };
-    }catch(error){
-      lastError=error;
-      if(attempt===0)await sleep(500);
-    }finally{
-      clearTimeout(timer);
-    }
+  }catch(error){
+      const message=error instanceof Error?error.message:String(error);
+      const name=error instanceof Error?error.name:"";
+      const status=message==="GDELT_429"?"RATE_LIMIT_429":name==="AbortError"?"TIMEOUT":message==="fetch failed"?"FETCH_FAILED":message.startsWith("GDELT_HTTP_")?"HTTP_OTHER":"REQUEST_ERROR";
+      console.warn("[GDELT] REQUEST_FAIL",{title,japaneseTitle,status,error:message,responseMs:Date.now()-started});
+      throw error;
+  }finally{
+    clearTimeout(timer);
   }
-  throw lastError instanceof Error?lastError:new Error(String(lastError||"GDELT request failed"));
 }
 
 const getPersistentGdeltSignal=unstable_cache(
@@ -83,7 +87,7 @@ export async function fetchGdeltSignals(articles:Array<{id:string;title:string}>
   const started=Date.now();
   gdeltNetworkRequests=0;
   const result=new Map<string,GdeltSignal>();
-  const pending=articles.filter(article=>!cache.has(normalizeKey(article.title)));
+  const pending=articles.filter(article=>!cache.has(normalizeKey(article.title))).slice(0,MAX_NEW_PER_REQUEST);
   let cursor=0;
 
   const worker=async()=>{
@@ -92,6 +96,7 @@ export async function fetchGdeltSignals(articles:Array<{id:string;title:string}>
       if(index>=pending.length)return;
       const article=pending[index];
       const key=normalizeKey(article.title);
+      if(index>0)await sleep(REQUEST_INTERVAL_MS);
       try{
         const localCached=cache.get(key);
         const signal=localCached||await getPersistentGdeltSignal(article.title.trim(),isJapanese(article.title));
@@ -127,11 +132,15 @@ export async function fetchGdeltSignals(articles:Array<{id:string;title:string}>
 
   console.log("[GDELT] SUMMARY",{
     totalArticles:articles.length,
+    newArticleLimit:MAX_NEW_PER_REQUEST,
+    requestIntervalMs:REQUEST_INTERVAL_MS,
+    maxConcurrency:MAX_CONCURRENCY,
     localMemoryHits,
     persistentCacheEnabled:true,
     persistentCacheLifetime:"indefinite",
     gdeltNetworkRequests,
-    failedOrUnavailable:Math.max(0,pending.length-result.size+localMemoryHits),
+    attemptedNewArticles:pending.length,
+    failedOrUnavailable:Math.max(0,pending.length-result.size),
     gdeltHits:hits,
     gdeltHitRate:result.size?Number((hits/result.size).toFixed(4)):0,
     japaneseTitleCount:japaneseTitles,
