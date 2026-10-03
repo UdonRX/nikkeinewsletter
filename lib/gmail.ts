@@ -50,18 +50,23 @@ function decodeMimeHeader(value: string) {
 }
 
 export async function listNikkeiMessages(accessToken: string) {
+  const started = Date.now();
   const gmail = await gmailClient(accessToken);
   const r = await gmail.users.messages.list({
     userId: "me",
     q: "{from:nikkei-news@mx.nikkei.com from:sokuho-news@mx.nikkei.com}",
     maxResults: 100,
   });
-  return r.data.messages ?? [];
+  const messages = r.data.messages ?? [];
+  console.log("[GMAIL] API_LIST", { durationMs: Date.now() - started, messageCount: messages.length });
+  return messages;
 }
 
 export async function getMessage(accessToken: string, id: string) {
+  const started = Date.now();
   const gmail = await gmailClient(accessToken);
   const r = await gmail.users.messages.get({ userId: "me", id, format: "full" });
+  console.log("[GMAIL] API_GET", { id, durationMs: Date.now() - started });
   return r.data;
 }
 

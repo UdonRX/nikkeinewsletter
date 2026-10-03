@@ -60,8 +60,9 @@ export default function Home(){
         console.log("[NEWS_LOAD] HTTP",{debugId,status:r.status,ok:r.ok,elapsedMs:Math.round(performance.now()-started)});
         const jsonStarted=performance.now();
         const data=await r.json().catch(()=>({}));
-        console.log("[NEWS_LOAD] JSON_PARSED",{debugId,elapsedMs:Math.round(performance.now()-jsonStarted),totalMs:Math.round(performance.now()-started),emailCount:Array.isArray(data.emails)?data.emails.length:0,articleCount:Array.isArray(data.emails)?data.emails.reduce((n:number,e:Email)=>n+(e.news?.length||0),0):0});
+        console.log("[NEWS_LOAD] JSON_PARSED",{debugId,elapsedMs:Math.round(performance.now()-jsonStarted),totalMs:Math.round(performance.now()-started),emailCount:Array.isArray(data.emails)?data.emails.length:0,articleCount:Array.isArray(data.emails)?data.emails.reduce((n:number,e:Email)=>n+(e.news?.length||0),0):0,gmailConnected:Boolean(data.gmailConnected)});
         if(!r.ok)throw new Error(data.error||"ニュースを取得できませんでした");
+        setGmailConnected(Boolean(data.gmailConnected));
         setEmails(data.emails||[]);
       })
       .catch(e=>{console.error("[NEWS_LOAD] ERROR",{debugId,error:e instanceof Error?e.message:String(e),elapsedMs:Math.round(performance.now()-started)});setError(e instanceof Error?e.message:"ニュースを取得できませんでした");})

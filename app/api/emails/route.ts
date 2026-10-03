@@ -51,8 +51,8 @@ function editionInfo(internalDate: string | undefined, dateHeader: string, conte
   return {kind:hour>=5&&hour<11?"朝刊":hour>=11&&hour<17?"昼刊":"夕刊",issueDate:`${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`};
 }
 
-function parseNikkeiNews(html:string,text:string,mailId:string,sourceIndex:number,publishedAt:string){
-  return parseNikkeiEmail(html,text).map((n:any,i:number)=>({
+function parseNikkeiNews(parsed:any[],mailId:string,sourceIndex:number,publishedAt:string){
+  return parsed.map((n:any,i:number)=>({
     id:`nikkei:${mailId}:${i}`,
     source:"日経",
     title:n.title||"無題",
@@ -83,16 +83,22 @@ async function getNikkeiNews(accessToken:string){
     const batchStarted=Date.now();
     const results=await Promise.all(batch.map(async m=>{
       const messageStarted=Date.now();
+      const apiGetStarted=Date.now();
       const full=await getMessage(accessToken,m.id!);
+      const apiGetMs=Date.now()-apiGetStarted;
       const from=header(full,"From"); const sender=from.toLowerCase();
       const dateHeader=header(full,"Date")??"";
+      const mimeStarted=Date.now();
       const {html,text}=await extractMimeBody(accessToken,m.id!,full.payload);
+      const mimeExtractMs=Date.now()-mimeStarted;
       const contentForEdition=html||text||"";
       const edition=editionInfo(full.internalDate??undefined,dateHeader,contentForEdition);
       const publishedAt=full.internalDate ? new Date(Number(full.internalDate)).toISOString() : new Date(dateHeader).toISOString();
       const kind=sender.includes("sokuho-news@mx.nikkei.com")?"速報":edition.kind;
+      const parseStarted=Date.now();
       const parsedEmail=parseNikkeiEmail(html,text);
-      const parsedArticles=parseNikkeiNews(html,text,m.id!,0,publishedAt);
+      const htmlParseAndExtractionMs=Date.now()-parseStarted;
+      const parsedArticles=parseNikkeiNews(parsedEmail,m.id!,0,publishedAt);
       console.log("[GMAIL] MESSAGE",{
         id:m.id,
         from,
@@ -102,6 +108,9 @@ async function getNikkeiNews(accessToken:string){
         validArticles:parsedArticles.length,
         hasHtml:Boolean(html),
         hasText:Boolean(text),
+        apiGetMs,
+        mimeExtractMs,
+        htmlParseAndExtractionMs,
         durationMs:Date.now()-messageStarted
       });
       return {
@@ -242,7 +251,7 @@ export async function GET(req:NextRequest){
       displayCounts
     });
     mark("API_RESPONSE_READY",{totalMs:Date.now()-requestStarted,issues:emails.length,articles:emails.reduce((n:number,email:any)=>n+email.news.length,0)});
-    return NextResponse.json({emails,sources:{enabled:["AFPBB","FNN","マイナビニュース","ITmedia","日経メール"]}},{headers:{"Cache-Control":"no-store","x-news-debug-id":debugId}});
+    return NextResponse.json({emails,gmailConnected:Boolean(accessToken),sources:{enabled:["AFPBB","FNN","マイナビニュース","ITmedia","日経メール"]}},{headers:{"Cache-Control":"no-store","x-news-debug-id":debugId}});
   }catch(e){
     mark("API_ERROR",{error:e instanceof Error?e.message:String(e)});
     console.error("[api/emails]",e);

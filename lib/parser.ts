@@ -109,14 +109,29 @@ function imageNearAnchor(a: Element, baseUrl: string) {
 }
 
 export function parseNikkeiEmail(html: string, textFallback: string): ParsedNews[] {
-  if (!html) return parseText(textFallback);
+  const started = Date.now();
+  if (!html) {
+    const out = parseText(textFallback);
+    console.log("[GMAIL_PARSE] TEXT_FALLBACK", {
+      htmlParseMs: 0,
+      articleExtractionMs: Date.now() - started,
+      totalMs: Date.now() - started,
+      articleCount: out.length,
+    });
+    return out;
+  }
 
+  const htmlParseStarted = Date.now();
   const doc = new JSDOM(html).window.document;
+  const htmlParseMs = Date.now() - htmlParseStarted;
 
+  const cleanupStarted = Date.now();
   for (const el of Array.from(doc.querySelectorAll("script,style,noscript,form,svg"))) {
     el.remove();
   }
+  const cleanupMs = Date.now() - cleanupStarted;
 
+  const extractionStarted = Date.now();
   const out: ParsedNews[] = [];
   const seen = new Set<string>();
   let section = "";
@@ -166,7 +181,15 @@ export function parseNikkeiEmail(html: string, textFallback: string): ParsedNews
     });
   }
 
-  return out.slice(0, 150);
+  const result = out.slice(0, 150);
+  console.log("[GMAIL_PARSE] HTML", {
+    htmlParseMs,
+    cleanupMs,
+    articleExtractionMs: Date.now() - extractionStarted,
+    totalMs: Date.now() - started,
+    articleCount: result.length,
+  });
+  return result;
 }
 
 function parseText(t: string): ParsedNews[] {
