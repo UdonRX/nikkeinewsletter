@@ -14,15 +14,15 @@ export const RSS_FEEDS:FeedConfig[]=[
  {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/index"},
  {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/techplus/enterprise",categoryHint:"business",tags:["企業IT","企業","IT"]},
  {source:"GIGAZINE",url:"https://gigazine.net/news/rss_2.0/",categoryHint:"technology",tags:["テクノロジー","AI","セキュリティ"]},
- {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/techplus/technology/science",categoryHint:"science",tags:["サイエンス"]},
- {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/techplus/technology/aerospace",categoryHint:"science",tags:["宇宙・航空"]},
+ {source:"マイナビニュース",url:"https://scienceportal.jst.go.jp/feed/rss.xml",categoryHint:"science",tags:["サイエンス"]},
+ {source:"マイナビニュース",url:"https://sorae.info/feed",categoryHint:"science",tags:["宇宙・航空"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/itmedia_all.xml",tags:["ITmedia"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/topstory.xml",tags:["ITmedia TOP STORIES"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/news_bursts.xml",categoryHint:"technology",tags:["ITmedia NEWS"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/aiplus.xml",categoryHint:"technology",tags:["AI"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/business.xml",categoryHint:"business",tags:["ビジネス"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/enterprise.xml",categoryHint:"business",tags:["エンタープライズ","セキュリティ","クラウド"]},
- {source:"AdverTimes.",url:"https://www.advertimes.com/news/feed",categoryHint:"business",tags:["マーケティング","広告","ブランド","SNS"]},
+ {source:"AdverTimes.",url:"https://webtan.impress.co.jp/rss.xml",categoryHint:"business",tags:["マーケティング","広告","ブランド","SNS"]},
 ];
 
 // TBS NEWS DIGの現行公式サイトでは公式RSS URLを確認できないため、推測URLは登録しない。
