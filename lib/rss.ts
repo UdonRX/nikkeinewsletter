@@ -47,8 +47,22 @@ const IMPORTANCE_RULES:Array<[number,string[]]>=[
  [-2,["芸能","エンタメ","ゲーム","スポーツ"]]
 ];
 
-function decodeHtml(v:string){const doc=new JSDOM("<body></body>").window.document;const e=doc.createElement("textarea");e.innerHTML=v||"";return e.value;}
-function cleanText(v:string){return decodeHtml(v).replace(/<!\[CDATA\[|\]\]>/g,"").replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();}
+let activeParseMetrics:{decodeHtmlCalls:number;decodeHtmlMs:number;cleanTextCalls:number;cleanTextMs:number}|null=null;
+function decodeHtml(v:string){
+  const started=Date.now();
+  const doc=new JSDOM("<body></body>").window.document;
+  const e=doc.createElement("textarea");
+  e.innerHTML=v||"";
+  const value=e.value;
+  if(activeParseMetrics){activeParseMetrics.decodeHtmlCalls++;activeParseMetrics.decodeHtmlMs+=Date.now()-started;}
+  return value;
+}
+function cleanText(v:string){
+  const started=Date.now();
+  const value=decodeHtml(v).replace(/<!\[CDATA\[|\]\]>/g,"").replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+  if(activeParseMetrics){activeParseMetrics.cleanTextCalls++;activeParseMetrics.cleanTextMs+=Date.now()-started;}
+  return value;
+}
 function field(block:string,names:string[]){for(const name of names){const escapedName=name.replace(":","\\:");const re=new RegExp("<"+escapedName+"(?:\\s[^>]*)?>([\\s\\S]*?)</"+escapedName+">","i");const m=block.match(re);if(m?.[1])return m[1].trim();}return "";}
 function attr(block:string,tag:string,name:string){const re=new RegExp("<"+tag+"\\b[^>]*\\b"+name+"=[\"']([^\"']+)[\"'][^>]*>","i");return block.match(re)?.[1]||"";}
 function parseDate(v:string){const d=new Date(cleanText(v));return Number.isNaN(d.getTime())?new Date().toISOString():d.toISOString();}
@@ -58,7 +72,99 @@ function normalizeTitle(t:string){return t.toLowerCase().replace(/【[^】]*】|
 function tokens(t:string){return new Set(t.toLowerCase().split(/[^0-9a-zA-Z一-龥ぁ-んァ-ヶー]+/).map(v=>v.trim()).filter(v=>v.length>=2));}
 function isDuplicate(a:NewsArticle,b:NewsArticle){if(a.url===b.url)return true;const na=normalizeTitle(a.title),nb=normalizeTitle(b.title);if(na&&nb&&(na===nb||na.includes(nb)||nb.includes(na)))return true;const ta=tokens(a.title),tb=tokens(b.title);if(!ta.size||!tb.size)return false;const common=[...ta].filter(t=>tb.has(t)).length;return common/Math.min(ta.size,tb.size)>=.72&&Math.abs(new Date(a.publishedAt).getTime()-new Date(b.publishedAt).getTime())<=12*60*60*1000;}
 function extractImage(block:string){const media=attr(block,"media:content","url")||attr(block,"media:thumbnail","url")||attr(block,"enclosure","url");if(media)return decodeHtml(media);const encoded=field(block,["content:encoded"]);return encoded.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["']/i)?.[1]||"";}
-function parseFeed(xml:string,config:FeedConfig):NewsArticle[]{const blocks=xml.match(/<(?:item|entry)\b[\s\S]*?<\/(?:item|entry)>/gi)||[];return blocks.map((block,i)=>{const title=cleanText(field(block,["title"]))||"無題";const url=decodeHtml(field(block,["link"]))||attr(block,"link","href")||decodeHtml(field(block,["guid"]));const publishedAt=parseDate(field(block,["pubDate","dc:date","published","updated"]));const updated=field(block,["updated"]);const description=cleanText(field(block,["description","summary"]));const content=cleanText(field(block,["content:encoded","content"]));const category=inferCategory(title,description+" "+content,config.categoryHint);const tags=[...new Set([...(config.tags||[]),cleanText(field(block,["category"]))].filter(Boolean))];const imageUrl=extractImage(block);return{id:`${config.source}:${url||normalizeTitle(title)}:${i}`,source:config.source,title,url,publishedAt,updatedAt:updated?parseDate(updated):undefined,description,content,imageUrl:imageUrl||undefined,category,primaryCategory:category,tags,importanceScore:scoreArticle(title,description+" "+content,category)};}).filter(a=>a.title!=="無題"&&/^https?:\/\//i.test(a.url));}
+function parseFeed(xml:string,config:FeedConfig):NewsArticle[]{
+  const metrics={
+    blockExtractionMs:0,
+    mapMs:0,
+    filterMs:0,
+    fieldRegexMs:0,
+    attrRegexMs:0,
+    dateParseMs:0,
+    categoryMs:0,
+    scoreMs:0,
+    imageMs:0,
+    decodeHtmlCalls:0,
+    decodeHtmlMs:0,
+    cleanTextCalls:0,
+    cleanTextMs:0
+  };
+  activeParseMetrics=metrics;
+  const blockStarted=Date.now();
+  const blocks=xml.match(/<(?:item|entry)\b[\s\S]*?<\/(?:item|entry)>/gi)||[];
+  metrics.blockExtractionMs=Date.now()-blockStarted;
+  try{
+    const mapStarted=Date.now();
+    const mapped=blocks.map((block,i)=>{
+      const fieldStarted=Date.now();
+      const title=cleanText(field(block,["title"]))||"無題";
+      const fieldTitleMs=Date.now()-fieldStarted;
+
+      const urlStarted=Date.now();
+      const url=decodeHtml(field(block,["link"]))||attr(block,"link","href")||decodeHtml(field(block,["guid"]));
+      const urlMs=Date.now()-urlStarted;
+
+      const dateStarted=Date.now();
+      const publishedAt=parseDate(field(block,["pubDate","dc:date","published","updated"]));
+      const updated=field(block,["updated"]);
+      const updatedAt=updated?parseDate(updated):undefined;
+      metrics.dateParseMs+=Date.now()-dateStarted;
+
+      const descriptionStarted=Date.now();
+      const description=cleanText(field(block,["description","summary"]));
+      const descriptionMs=Date.now()-descriptionStarted;
+
+      const contentStarted=Date.now();
+      const content=cleanText(field(block,["content:encoded","content"]));
+      const contentMs=Date.now()-contentStarted;
+
+      const categoryStarted=Date.now();
+      const category=inferCategory(title,description+" "+content,config.categoryHint);
+      metrics.categoryMs+=Date.now()-categoryStarted;
+
+      const tagsStarted=Date.now();
+      const tags=[...new Set([...(config.tags||[]),cleanText(field(block,["category"]))].filter(Boolean))];
+      const tagsMs=Date.now()-tagsStarted;
+
+      const imageStarted=Date.now();
+      const imageUrl=extractImage(block);
+      metrics.imageMs+=Date.now()-imageStarted;
+
+      const scoreStarted=Date.now();
+      const importanceScore=scoreArticle(title,description+" "+content,category);
+      metrics.scoreMs+=Date.now()-scoreStarted;
+
+      metrics.fieldRegexMs+=fieldTitleMs+descriptionMs+contentMs+tagsMs+dateStarted-dateStarted;
+      metrics.attrRegexMs+=urlMs;
+      void updatedAt;
+
+      return{id:`${config.source}:${url||normalizeTitle(title)}:${i}`,source:config.source,title,url,publishedAt,updatedAt,description,content,imageUrl:imageUrl||undefined,category,primaryCategory:category,tags,importanceScore};
+    });
+    metrics.mapMs=Date.now()-mapStarted;
+    const filterStarted=Date.now();
+    const filtered=mapped.filter(a=>a.title!=="無題"&&/^https?:\/\//i.test(a.url));
+    metrics.filterMs=Date.now()-filterStarted;
+    console.log("[RSS] PARSE_DETAIL",config.source,{
+      blocks:blocks.length,
+      articles:filtered.length,
+      blockExtractionMs:metrics.blockExtractionMs,
+      mapMs:metrics.mapMs,
+      filterMs:metrics.filterMs,
+      fieldRegexMs:metrics.fieldRegexMs,
+      attrRegexMs:metrics.attrRegexMs,
+      dateParseMs:metrics.dateParseMs,
+      categoryMs:metrics.categoryMs,
+      scoreMs:metrics.scoreMs,
+      imageMs:metrics.imageMs,
+      decodeHtmlCalls:metrics.decodeHtmlCalls,
+      decodeHtmlMs:metrics.decodeHtmlMs,
+      cleanTextCalls:metrics.cleanTextCalls,
+      cleanTextMs:metrics.cleanTextMs
+    });
+    return filtered;
+  }finally{
+    activeParseMetrics=null;
+  }
+}
 async function fetchHtmlFallback(config:FeedConfig,fallbackUrl:string){
   const controller=new AbortController();
   const timeoutMs=15000;
