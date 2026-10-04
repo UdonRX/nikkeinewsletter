@@ -55,7 +55,7 @@ export default function Home(){
     const cache=readGmailCache();
     console.log("[NEWS_LOAD] START",{debugId,gmailCacheEmails:cache.emails.length,gmailHistoryId:Boolean(cache.historyId)});
     const headers:Record<string,string>={"x-news-debug-id":debugId};
-    if(cache.historyId)headers["x-gmail-history-id"]=cache.historyId;
+    if(cache.historyId && cache.emails.length)headers["x-gmail-history-id"]=cache.historyId;
     if(cache.emails.length)headers["x-gmail-cached-ids"]=JSON.stringify(cache.emails.map(e=>e.id));
     fetch("/api/emails",{cache:"no-store",headers})
       .then(async r=>{
