@@ -53,7 +53,7 @@ export async function GET(req:NextRequest){
       }
     }
 
-    const topicEmails=trendData.topics.map((topic:any)=>({id:topic.id,threadId:topic.id,from:topic.articles.map((a:any)=>a.source).filter(Boolean).filter((v:any,i:number,arr:any[])=>arr.indexOf(v)===i).join(" / "),subject:topic.title,receivedAt:topic.publishedAt,internalDate:String(new Date(topic.publishedAt).getTime()),issueDate:issueDate(topic.publishedAt),kind:daypart(topic.publishedAt),snippet:topic.summary||"",newsCount:topic.articles.length,news:topic.articles.map((a:any)=>({...a,body:a.description,importanceStars:topic.importanceStars,trendBadges:topic.trendBadges,topicId:topic.id}))}));
+    const topicEmails=trendData.topics.map((topic:any)=>({id:"trend:"+topic.id,threadId:topic.id,from:topic.articles.map((a:any)=>a.source).filter(Boolean).filter((v:any,i:number,arr:any[])=>arr.indexOf(v)===i).join(" / "),subject:topic.title,receivedAt:topic.publishedAt,internalDate:String(new Date(topic.publishedAt).getTime()),issueDate:issueDate(topic.publishedAt),kind:daypart(topic.publishedAt),snippet:topic.summary||"",newsCount:topic.articles.length,news:topic.articles.map((a:any)=>({...a,body:a.description,importanceStars:topic.importanceStars,trendBadges:topic.trendBadges,topicId:topic.id}))}));
     const emails=[...nikkeiEmails,...topicEmails].sort((a,b)=>Number(b.internalDate||0)-Number(a.internalDate||0));
     const displayCounts={topics:trendData.topics.length,articles:trendData.articles.length,nikkeiArticles:nikkei.length};
     console.log("[NEWS] DISPLAY_SUMMARY",{topics:trendData.topics.length,articles:trendData.articles.length,nikkeiArticles:nikkei.length,displayCounts});

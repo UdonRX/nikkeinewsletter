@@ -78,6 +78,8 @@ export default function Home(){
   },[]);
 
   const timeline=useMemo(()=>{const rows:Array<{email:Email;news:News;newsIndex:number;order:number}>=[];for(const email of emails)email.news.forEach((news,newsIndex)=>rows.push({email,news,newsIndex,order:newsIndex}));rows.sort((a,b)=>{const at=new Date(a.news.publishedAt||a.email.internalDate).getTime(),bt=new Date(b.news.publishedAt||b.email.internalDate).getTime();return bt-at||b.order-a.order;});return rows;},[emails]);
+  const trendTimeline=useMemo(()=>timeline.filter(x=>x.email.id.startsWith("trend:")),[timeline]);
+  const nikkeiTimeline=useMemo(()=>timeline.filter(x=>x.email.id.startsWith("nikkei:")),[timeline]);
   const filtered=useMemo(()=>{const q=query.trim().toLowerCase();return timeline.filter(x=>{const n=x.news.importanceStars||1;const mf=importanceFilter==="all"||(importanceFilter==="2plus"&&n>=2)||(importanceFilter==="3"&&n===3)||(importanceFilter==="4plus"&&n>=4);const mq=!q||[x.news.title,x.news.body,x.news.source,x.news.category].join(" ").toLowerCase().includes(q);return mf&&mq;});},[timeline,query,importanceFilter]);
   const trendFiltered=useMemo(()=>{const q=query.trim().toLowerCase();return trendTimeline.filter(x=>{const n=x.news.importanceStars||1;const mf=importanceFilter==="all"||(importanceFilter==="2plus"&&n>=2)||(importanceFilter==="3"&&n===3)||(importanceFilter==="4plus"&&n>=4);const mq=!q||[x.news.title,x.news.body,x.news.source,x.news.category].join(" ").toLowerCase().includes(q);return mf&&mq;});},[trendTimeline,query,importanceFilter]);
   const nikkeiFiltered=useMemo(()=>{const q=query.trim().toLowerCase();return nikkeiTimeline.filter(x=>!q||[x.news.title,x.news.body,x.news.source,x.news.category].join(" ").toLowerCase().includes(q));},[nikkeiTimeline,query]);
