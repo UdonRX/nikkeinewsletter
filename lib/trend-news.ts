@@ -24,7 +24,7 @@ async function fetchNewsData(trends:TrendKeyword[]){const key=process.env.NEWSDA
   for(const t of [...googleTerms,...yahooTerms]){const k=norm(t.searchTerm);const prev=selectedMap.get(k);if(!prev)selectedMap.set(k,t);else selectedMap.set(k,{...prev,googleRank:t.googleRank??prev.googleRank,yahooRank:t.yahooRank??prev.yahooRank,sources:uniq([...prev.sources,...t.sources])});}
   const selected=[...selectedMap.values()].sort((a,b)=>Math.min(a.googleRank??99,a.yahooRank??99)-Math.min(b.googleRank??99,b.yahooRank??99));
   console.log("[TREND_PIPELINE] NEWSDATA_START",JSON.stringify({googleTerms:googleTerms.map(t=>({term:t.searchTerm,rank:t.googleRank})),yahooTerms:yahooTerms.map(t=>({term:t.searchTerm,rank:t.yahooRank})),selectedTerms:selected.map(t=>t.searchTerm),queries:selected.length}));
-  const batches=await Promise.allSettled(selected.map(t=>newsQuery(key,t.searchTerm.includes(" ")?\`"\${t.searchTerm}"\`:t.searchTerm)));
+  const batches=await Promise.allSettled(selected.map(t=>newsQuery(key,t.searchTerm.includes(" ") ? '"' + t.searchTerm + '"' : t.searchTerm)));
   const failed=batches.filter(x=>x.status==="rejected").map(x=>x.reason instanceof Error?x.reason.message:String(x.reason));
   const raw=batches.flatMap((x,i)=>x.status==="fulfilled"?x.value.map((article:any)=>({article,term:selected[i]})):[]);
   console.log("[TREND_PIPELINE] NEWSDATA_BATCH_SUMMARY",JSON.stringify({requested:batches.length,succeeded:batches.length-failed.length,failed:failed.length,raw:raw.length,failures:failed.slice(0,20)}));
