@@ -1,7 +1,42 @@
-export function timeOf(value?:string){if(!value)return "--:--";const d=new Date(value);if(Number.isNaN(d.getTime()))return "--:--";return new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",hour:"2-digit",minute:"2-digit",hour12:false}).format(d);}
-export function stars(count=1){const n=Math.max(1,Math.min(5,count));return "★".repeat(n);}
-export function tinySummary(body:string,title:string){const text=(body||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();if(!text)return "";return text.length>52?text.slice(0,52)+"…":text;}
-export function cleanNewsTitle(title:string){return title.replace(/\s*[（(][^()（）]{1,30}[)）]\s*$/,"").replace(/^\s*[【\[][^】\]]{1,24}[】\]]\s*/,"").replace(/\s*[【\[](?:プロ野球|試合開始前|試合結果|速報)[^】\]]*[】\]]\s*/g,"").trim();}
-export function titleTag(title:string){const m=title.match(/[（(]([^()（）]{1,30})[)）]$/);if(m)return m[1];const b=title.match(/^[【\[]([^】\]]{1,24})[】\]]/);return b?b[1]:"";}
-export function heatKey(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return "";return new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",hour12:false}).format(d);}
-export function hourLabel(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return "--:-- - --:--";const parts=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Tokyo",hour:"2-digit",hour12:false}).formatToParts(d);const hourPart=parts.find(p=>p.type==="hour")?.value;const h=Number(hourPart);if(!Number.isFinite(h))return "--:-- - --:--";return String(h%24).padStart(2,"0")+":00 - "+String((h+1)%24).padStart(2,"0")+":00;}
+export function timeOf(value?:string){
+  if(!value)return "--:--";
+  const d=new Date(value);
+  if(Number.isNaN(d.getTime()))return "--:--";
+  return new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",hour:"2-digit",minute:"2-digit",hour12:false}).format(d);
+}
+export function stars(count=1){
+  const n=Math.max(1,Math.min(5,count));
+  return "★".repeat(n);
+}
+export function tinySummary(body:string,title:string){
+  const text=(body||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+  if(!text)return "";
+  return text.length>52?text.slice(0,52)+"…":text;
+}
+export function cleanNewsTitle(title:string){
+  return title
+    .replace(/\s*[（(][^()（）]{1,30}[)）]\s*$/,"")
+    .replace(/^\s*[【\[][^】\]]{1,24}[】\]]\s*/,"")
+    .replace(/\s*[【\[](?:プロ野球|試合開始前|試合結果|速報)[^】\]]*[】\]]\s*/g,"")
+    .trim();
+}
+export function titleTag(title:string){
+  const m=title.match(/[（(]([^()（）]{1,30})[)）]$/);
+  if(m)return m[1];
+  const b=title.match(/^[【\[]([^】\]]{1,24})[】\]]/);
+  return b?b[1]:"";
+}
+export function heatKey(value:string){
+  const d=new Date(value);
+  if(Number.isNaN(d.getTime()))return "";
+  return new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",hour12:false}).format(d);
+}
+export function hourLabel(value:string){
+  const d=new Date(value);
+  if(Number.isNaN(d.getTime()))return "--:-- - --:--";
+  const hourText=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Tokyo",hour:"2-digit",hour12:false}).format(d);
+  const h=parseInt(hourText,10);
+  if(!Number.isFinite(h))return "--:-- - --:--";
+  const next=(h+1)%24;
+  return String(h%24).padStart(2,"0")+":00 - "+String(next).padStart(2,"0")+":00";
+}
