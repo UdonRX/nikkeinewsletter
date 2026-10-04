@@ -7,7 +7,35 @@ import { cleanNewsTitle, heatKey, hourLabel, stars, timeOf, titleTag, tinySummar
 import { NewsRow } from "@/app/components/news/NewsRow";
 
 const GMAIL_CACHE_KEY="nikkei-news-gmail-cache-v1";
-undefined
+
+function readGmailCache(): {historyId:string;emails:Email[]} {
+  if(typeof window === "undefined") return {historyId:"",emails:[]};
+  try {
+    const raw=window.localStorage.getItem(GMAIL_CACHE_KEY);
+    if(!raw) return {historyId:"",emails:[]};
+    const parsed=JSON.parse(raw);
+    return {
+      historyId:typeof parsed?.historyId==="string"?parsed.historyId:"",
+      emails:Array.isArray(parsed?.emails)?parsed.emails:[],
+    };
+  } catch {
+    return {historyId:"",emails:[]};
+  }
+}
+
+function writeGmailCache(historyId:string,emails:Email[]) {
+  if(typeof window === "undefined") return;
+  try { window.localStorage.setItem(GMAIL_CACHE_KEY,JSON.stringify({historyId,emails})); } catch {}
+}
+
+function mergeGmailEmails(cached:Email[],incoming:Email[],deletedIds:string[],fullSync:boolean): Email[] {
+  if(fullSync) return incoming;
+  const deleted=new Set(deletedIds);
+  const byId=new Map<string,Email>();
+  for(const email of cached) if(!deleted.has(email.id)) byId.set(email.id,email);
+  for(const email of incoming) if(!deleted.has(email.id)) byId.set(email.id,email);
+  return [...byId.values()];
+}
 export default function Home(){
   const [emails,setEmails]=useState<Email[]>([]);
   const [loading,setLoading]=useState(true);
