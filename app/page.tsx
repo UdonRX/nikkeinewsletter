@@ -3,96 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { Email, News, ReaderData } from "@/lib/news/types";
-import { heatKey, hourLabel, stars, tinySummary } from "@/lib/news/ui";
+import { cleanNewsTitle, heatKey, hourLabel, stars, timeOf, titleTag, tinySummary } from "@/lib/news/ui";
 import { NewsRow } from "@/app/components/news/NewsRow";
 
 const GMAIL_CACHE_KEY="nikkei-news-gmail-cache-v1";
-function readGmailCache():{historyId:string;emails:Email[]}{
-  try{const raw=localStorage.getItem(GMAIL_CACHE_KEY);if(!raw)return{historyId:"",emails:[]};const v=JSON.parse(raw);return{historyId:typeof v.historyId==="string"?v.historyId:"",emails:Array.isArray(v.emails)?v.emails:[]};}catch{return{historyId:"",emails:[]};}
-}
-function writeGmailCache(historyId:string,emails:Email[]){try{localStorage.setItem(GMAIL_CACHE_KEY,JSON.stringify({historyId,emails}));}catch(e){console.warn("[GMAIL_CACHE] SAVE_FAILED",e);}}
-function mergeGmailEmails(cached:Email[],incoming:Email[],deletedIds:string[],fullSync:boolean){
-  if(fullSync)return incoming.slice().sort((a,b)=>Number(b.internalDate||0)-Number(a.internalDate||0)).slice(0,30);
-  const map=new Map(cached.map(e=>[e.id,e]));
-  for(const id of deletedIds)map.delete(id);
-  for(const email of incoming)map.set(email.id,email);
-  return [...map.values()].sort((a,b)=>Number(b.internalDate||0)-Number(a.internalDate||0)).slice(0,30);
-}
-function dateKey(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return "";const p=new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(d);return `${p.find(x=>x.type==="year")?.value}-${p.find(x=>x.type==="month")?.value}-${p.find(x=>x.type==="day")?.value}`;}
-function isSportsTitle(title:string){return /プロ野球|野球|サッカー|試合|対戦|スコア|アジア大会|Jリーグ|NPB|DeNA|阪神|ロッテ|楽天|巨人|広島|中日|ヤクルト|ソフトバンク|日本ハム|オリックス|西武/.test(title);}
-function relatedGroupKey(news:News){if(isSportsTitle(news.title))return "sports";const text=(cleanNewsTitle(news.title)+" "+(news.category||"")).replace(/[、。！？・：:]/g," ").toLowerCase();const words=text.split(/\s+/).filter(w=>w.length>=2).slice(0,6);return words.length>=2?((news.category||"other")+":"+words.slice(0,2).join("|")):"";}
-use client";
-
-import { useEffect, useMemo, useState } from "react";
-
-import type { Email, News, ReaderData } from "@/lib/news/types";
-import { heatKey, hourLabel, stars, tinySummary } from "@/lib/news/ui";
-import { NewsRow } from "@/app/components/news/NewsRow";
-
-const GMAIL_CACHE_KEY="nikkei-news-gmail-cache-v1";
-function readGmailCache():{historyId:string;emails:Email[]}{
-  try{const raw=localStorage.getItem(GMAIL_CACHE_KEY);if(!raw)return{historyId:"",emails:[]};const v=JSON.parse(raw);return{historyId:typeof v.historyId==="string"?v.historyId:"",emails:Array.isArray(v.emails)?v.emails:[]};}catch{return{historyId:"",emails:[]};}
-}
-function writeGmailCache(historyId:string,emails:Email[]){try{localStorage.setItem(GMAIL_CACHE_KEY,JSON.stringify({historyId,emails}));}catch(e){console.warn("[GMAIL_CACHE] SAVE_FAILED",e);}}
-function mergeGmailEmails(cached:Email[],incoming:Email[],deletedIds:string[],fullSync:boolean){
-  if(fullSync)return incoming.slice().sort((a,b)=>Number(b.internalDate||0)-Number(a.internalDate||0)).slice(0,30);
-  const map=new Map(cached.map(e=>[e.id,e]));
-  for(const id of deletedIds)map.delete(id);
-  for(const email of incoming)map.set(email.id,email);
-  return [...map.values()].sort((a,b)=>Number(b.internalDate||0)-Number(a.internalDate||0)).slice(0,30);
-}
-function dateKey(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return "";const p=new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(d);return `${p.find(x=>x.type==="year")?.value}-${p.find(x=>x.type==="month")?.value}-${p.find(x=>x.type==="day")?.value}`;}
-function isSportsTitle(title:string){return /プロ野球|野球|サッカー|試合|対戦|スコア|アジア大会|Jリーグ|NPB|DeNA|阪神|ロッテ|楽天|巨人|広島|中日|ヤクルト|ソフトバンク|日本ハム|オリックス|西武/.test(title);}
-function relatedGroupKey(news:News){if(isSportsTitle(news.title))return "sports";const text=(cleanNewsTitle(news.title)+" "+(news.category||"")).replace(/[、。！？・：:]/g," ").toLowerCase();const words=text.split(/\s+/).filter(w=>w.length>=2).slice(0,6);return words.length>=2?((news.category||"other")+":"+words.slice(0,2).join("|")):"";}
-function renderNewsRow(
-  email: Email,
-  news: News,
-  newsIndex: number,
-  openReader: (email: Email, newsIndex: number) => void
-) {
-  const n = news.importanceStars || 1;
-  const tag = titleTag(news.title);
-
-  return (
-    <article
-      className={"timeline-item stars-" + n}
-      key={(news.id || email.id) + ":" + newsIndex}
-    >
-      <time>{timeOf(news.publishedAt || email.internalDate)}</time>
-      <div className="timeline-rail"><span /></div>
-      <button
-        className={"timeline-main stars-" + n}
-        onClick={() => openReader(email, newsIndex)}
-      >
-        <div className="timeline-title-row">
-          <div className="timeline-title">{cleanNewsTitle(news.title)}</div>
-          {tag && <span className="title-tag">{tag}</span>}
-        </div>
-        {n >= 4 && (
-          <div className="trend-badges">
-            {(news.trendBadges || []).map(b => <span key={b}>{b}</span>)}
-          </div>
-        )}
-        {n >= 3 && (
-          <div className="timeline-summary">
-            {tinySummary(news.body, news.title)}
-          </div>
-        )}
-      </button>
-      <div className="timeline-meta">
-        <div className="timeline-source">{news.source || email.from}</div>
-        <div
-          className={"timeline-stars stars-display-" + n}
-          aria-label={"重要度 " + n + " / 5"}
-        >
-          {n >= 4 ? stars(n) : n === 3 ? "★3" : "★" + n}
-        </div>
-      </div>
-    </article>
-  );
-}
-
-
+undefined
 export default function Home(){
   const [emails,setEmails]=useState<Email[]>([]);
   const [loading,setLoading]=useState(true);
