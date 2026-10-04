@@ -58,6 +58,6 @@ export async function GET(req:NextRequest){
     const displayCounts={topics:trendData.topics.length,articles:trendData.articles.length,nikkeiArticles:nikkei.length};
     console.log("[NEWS] DISPLAY_SUMMARY",{topics:trendData.topics.length,articles:trendData.articles.length,nikkeiArticles:nikkei.length,displayCounts});
     mark("API_RESPONSE_READY",{totalMs:Date.now()-requestStarted,issues:emails.length,articles:emails.reduce((n:number,email:any)=>n+email.news.length,0)});
-    return NextResponse.json({emails,topics:trendData.topics,trends:trendData.trends,heatByHour:trendData.heatByHour,gmailConnected:Boolean(accessToken),gmailSync,sources:{enabled:["Google Trends","Yahoo!リアルタイム検索","NewsData.io","日経メール"]}},{headers:{"Cache-Control":"no-store","x-news-debug-id":debugId}});
+    return NextResponse.json({emails,topics:trendData.topics,trends:trendData.trends,heatByHour:trendData.heatByHour,gmailConnected:Boolean(accessToken),gmailSync,sources:{enabled:["Google Trends","Yahoo!リアルタイム検索","Google News","日経メール"]}},{headers:{"Cache-Control":"no-store","x-news-debug-id":debugId}});
   }catch(e){mark("API_ERROR",{error:e instanceof Error?e.message:String(e)});console.error("[api/emails]",e);return NextResponse.json({error:e instanceof Error?e.message:"news_error"},{status:502,headers:{"Cache-Control":"no-store"}});}
 }
