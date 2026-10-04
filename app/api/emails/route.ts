@@ -3,7 +3,7 @@ import { listNikkeiMessages, batchGetMessages, getProfileHistoryId, getHistoryCh
 import { parseNikkeiEmail } from "@/lib/parser";
 import { refreshAccessToken } from "@/lib/google";
 import { getRefreshToken, setAccessToken } from "@/lib/session";
-import { daypart, issueDate } from "@/lib/rss";
+import { daypart, issueDate, inferCategory, scoreArticle } from "@/lib/rss";
 import { collectTrendNews } from "@/lib/trend-news";
 
 export const runtime = "nodejs";
