@@ -2,7 +2,7 @@ import { JSDOM } from "jsdom";
 
 export type NewsCategory = "politics"|"economy"|"business"|"international"|"market"|"technology"|"science"|"society"|"life"|"other";
 export type NewsArticle = {
-  id:string; source:"Yahoo!ニュース"|"FNN"|"マイナビニュース"|"ITmedia"|"GIGAZINE"|"AdverTimes."|"日経"; title:string; url:string;
+  id:string; source:"Yahoo!ニュース"|"FNN"|"マイナビニュース"|"ITmedia"|"GIGAZINE"|"AdverTimes."|"Googleニュース"|"日経"; title:string; url:string;
   publishedAt:string; updatedAt?:string; description?:string; content?:string; imageUrl?:string;
   category?:NewsCategory; primaryCategory?:NewsCategory; tags?:string[]; importanceScore?:number;
 };
@@ -12,8 +12,6 @@ export const RSS_FEEDS:FeedConfig[]=[
  {source:"FNN",url:"https://www.fnn.jp/list/feed/rss",categoryHint:"society",tags:["FNNプライムオンライン"]},
  {source:"Yahoo!ニュース",url:"https://news.yahoo.co.jp/rss/categories/world.xml",tags:["国際","外交","海外政治","世界経済","社会","科学","ライフ"]},
  {source:"GIGAZINE",url:"https://gigazine.net/news/rss_2.0/",categoryHint:"technology",tags:["テクノロジー","AI","セキュリティ"]},
- {source:"マイナビニュース",url:"https://scienceportal.jst.go.jp/feed/rss.xml",categoryHint:"science",tags:["サイエンス"]},
- {source:"マイナビニュース",url:"https://sorae.info/feed",categoryHint:"science",tags:["宇宙・航空"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/itmedia_all.xml",tags:["ITmedia"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/topstory.xml",tags:["ITmedia TOP STORIES"]},
  {source:"ITmedia",url:"https://rss.itmedia.co.jp/rss/2.0/news_bursts.xml",categoryHint:"technology",tags:["ITmedia NEWS"]},
@@ -291,9 +289,17 @@ export async function fetchGoogleTrendTerms(){
     return [];
   }finally{clearTimeout(timer);}
 }
+async function fetchGoogleNewsTrendFeeds(terms:string[]){
+  const selected=terms.slice(0,10).filter(term=>term.trim().length>=2);
+  const configs:FeedConfig[]=selected.map(term=>({source:"Googleニュース",url:`https://news.google.com/rss/search?hl=ja&gl=JP&ceid=JP:ja&q=${encodeURIComponent(term)}`,tags:["Google Trends"]}));
+  const results=await Promise.allSettled(configs.map(fetchFeed));
+  const articles=results.flatMap(r=>r.status==="fulfilled"?r.value:[]);
+  console.log("[GOOGLE_NEWS_TRENDS] SUMMARY",JSON.stringify({terms:selected,feeds:configs.length,articles:articles.length}));
+  return articles;
+}
 function trendBoost(article:NewsArticle,terms:string[]){
   if(!terms.length)return 0;
-  const text=(article.title+" "+(article.description||"")).toLowerCase();
+  const text=(article.title+" "+(article.description||"")+" "+(article.content||"")).toLowerCase();
   const isLiveSports=/速報|試合途中|試合開始前|試合結果|試合速報|プロ野球|サッカー速報|スコア速報/.test(article.title);
   const matches=terms.map((term,index)=>({term:term.toLowerCase().trim(),index})).filter(x=>x.term.length>=2&&text.includes(x.term));
   if(!matches.length)return 0;
@@ -314,7 +320,7 @@ export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
     const trendScore=trendBoost(article,terms);
     const baseImportance=article.importanceScore||0;
     const score=baseImportance+trendScore;
-    const stars=score>=13&&baseImportance>=13?5:score>=10&&baseImportance>=10?4:score>=6&&baseImportance>=6?3:score>=2&&baseImportance>=2?2:1;
+    const stars=score>=13?5:score>=10?4:score>=6?3:score>=2?2:1;
     return {...article,trendScore,importanceStars:stars,score,baseImportance};
   });
   const gates=[
@@ -326,7 +332,7 @@ export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
   ];
   const counts=Object.fromEntries(gates.map(g=>[g.stars,scored.filter(a=>a.importanceStars===g.stars).length]));
   const violations=scored.filter(article=>{
-    const expected=article.score>=13&&article.baseImportance>=13?5:article.score>=10&&article.baseImportance>=10?4:article.score>=6&&article.baseImportance>=6?3:article.score>=2&&article.baseImportance>=2?2:1;
+    const expected=article.score>=13?5:article.score>=10?4:article.score>=6?3:article.score>=2?2:1;
     return article.importanceStars!==expected;
   }).length;
   const boundaryChecks=gates.map(g=>{
