@@ -2,18 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type News = {
-  id?: string; title: string; body: string; url?: string; index: number;
-  imageUrl?: string; imageAlt?: string; source?: string; category?: string;
-  tags?: string[]; importanceScore?: number; trendScore?: number;
-  importanceStars?: number; publishedAt?: string; trendBadges?: string[]; topicId?: string;
-};
-type Email = {
-  id: string; subject: string; receivedAt: string; internalDate: string;
-  issueDate?: string; kind: "朝刊"|"昼刊"|"夕刊"|"速報"; from: string;
-  newsCount: number; news: News[];
-};
-type ReaderData = {title:string; imageUrl?:string; contentHtml:string; url:string; available:boolean; paywalled?:boolean; source?:string};
+import type { Email, News, ReaderData } from "@/lib/news/types";
+import { heatKey, hourLabel, stars, tinySummary } from "@/lib/news/ui";
+import { NewsRow } from "@/app/components/news/NewsRow";
 
 const GMAIL_CACHE_KEY="nikkei-news-gmail-cache-v1";
 function readGmailCache():{historyId:string;emails:Email[]}{
@@ -28,14 +19,29 @@ function mergeGmailEmails(cached:Email[],incoming:Email[],deletedIds:string[],fu
   return [...map.values()].sort((a,b)=>Number(b.internalDate||0)-Number(a.internalDate||0)).slice(0,30);
 }
 function dateKey(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return "";const p=new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(d);return `${p.find(x=>x.type==="year")?.value}-${p.find(x=>x.type==="month")?.value}-${p.find(x=>x.type==="day")?.value}`;}
-function heatKey(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return "";return new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",hour12:false}).format(d);}
-function hourLabel(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return "";const h=Number(new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",hour:"2-digit",hour12:false}).format(d));return String(h).padStart(2,"0")+":00 - "+String((h+1)%24).padStart(2,"0")+":00";}
-function displayDate(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return value;return new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",month:"long",day:"numeric",weekday:"short"}).format(d);}
-function timeOf(value?:string){if(!value)return "--:--";const d=new Date(value);if(Number.isNaN(d.getTime()))return "--:--";return new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",hour:"2-digit",minute:"2-digit",hour12:false}).format(d);}
-function stars(count=1){const n=Math.max(1,Math.min(5,count));return "★".repeat(n);}
-function tinySummary(body:string,title:string){const text=(body||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();if(!text)return "";return text.length>52?text.slice(0,52)+"…":text;}
-function cleanNewsTitle(title:string){return title.replace(/\s*[（(][^()（）]{1,30}[)）]\s*$/,"").replace(/^\s*[【\[][^】\]]{1,24}[】\]]\s*/,"").replace(/\s*[【\[](?:プロ野球|試合開始前|試合結果|速報)[^】\]]*[】\]]\s*/g,"").trim();}
-function titleTag(title:string){const m=title.match(/[（(]([^()（）]{1,30})[)）]$/);if(m)return m[1];const b=title.match(/^[【\[]([^】\]]{1,24})[】\]]/);return b?b[1]:"";}
+function isSportsTitle(title:string){return /プロ野球|野球|サッカー|試合|対戦|スコア|アジア大会|Jリーグ|NPB|DeNA|阪神|ロッテ|楽天|巨人|広島|中日|ヤクルト|ソフトバンク|日本ハム|オリックス|西武/.test(title);}
+function relatedGroupKey(news:News){if(isSportsTitle(news.title))return "sports";const text=(cleanNewsTitle(news.title)+" "+(news.category||"")).replace(/[、。！？・：:]/g," ").toLowerCase();const words=text.split(/\s+/).filter(w=>w.length>=2).slice(0,6);return words.length>=2?((news.category||"other")+":"+words.slice(0,2).join("|")):"";}
+use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+import type { Email, News, ReaderData } from "@/lib/news/types";
+import { heatKey, hourLabel, stars, tinySummary } from "@/lib/news/ui";
+import { NewsRow } from "@/app/components/news/NewsRow";
+
+const GMAIL_CACHE_KEY="nikkei-news-gmail-cache-v1";
+function readGmailCache():{historyId:string;emails:Email[]}{
+  try{const raw=localStorage.getItem(GMAIL_CACHE_KEY);if(!raw)return{historyId:"",emails:[]};const v=JSON.parse(raw);return{historyId:typeof v.historyId==="string"?v.historyId:"",emails:Array.isArray(v.emails)?v.emails:[]};}catch{return{historyId:"",emails:[]};}
+}
+function writeGmailCache(historyId:string,emails:Email[]){try{localStorage.setItem(GMAIL_CACHE_KEY,JSON.stringify({historyId,emails}));}catch(e){console.warn("[GMAIL_CACHE] SAVE_FAILED",e);}}
+function mergeGmailEmails(cached:Email[],incoming:Email[],deletedIds:string[],fullSync:boolean){
+  if(fullSync)return incoming.slice().sort((a,b)=>Number(b.internalDate||0)-Number(a.internalDate||0)).slice(0,30);
+  const map=new Map(cached.map(e=>[e.id,e]));
+  for(const id of deletedIds)map.delete(id);
+  for(const email of incoming)map.set(email.id,email);
+  return [...map.values()].sort((a,b)=>Number(b.internalDate||0)-Number(a.internalDate||0)).slice(0,30);
+}
+function dateKey(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return "";const p=new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(d);return `${p.find(x=>x.type==="year")?.value}-${p.find(x=>x.type==="month")?.value}-${p.find(x=>x.type==="day")?.value}`;}
 function isSportsTitle(title:string){return /プロ野球|野球|サッカー|試合|対戦|スコア|アジア大会|Jリーグ|NPB|DeNA|阪神|ロッテ|楽天|巨人|広島|中日|ヤクルト|ソフトバンク|日本ハム|オリックス|西武/.test(title);}
 function relatedGroupKey(news:News){if(isSportsTitle(news.title))return "sports";const text=(cleanNewsTitle(news.title)+" "+(news.category||"")).replace(/[、。！？・：:]/g," ").toLowerCase();const words=text.split(/\s+/).filter(w=>w.length>=2).slice(0,6);return words.length>=2?((news.category||"other")+":"+words.slice(0,2).join("|")):"";}
 function renderNewsRow(
@@ -146,7 +152,7 @@ export default function Home(){
     <div className="timeline-tools"><div className="search-wrap"><span>⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="ニュースを検索"/></div><button className="shorts-tool" onClick={openShorts}>Shorts</button></div>
     <div className="importance-filters" aria-label="重要度フィルター">{([["all","すべて"],["2plus","★2以上"],["3","★3のみ"],["4plus","★4以上"]] as const).map(([value,label])=><button key={value} className={importanceFilter===value?"active":""} onClick={()=>setImportanceFilter(value)}>{label}</button>)}</div>
     <div className="timeline-count">{filtered.length.toLocaleString("ja-JP")} 件</div>
-    <section className="timeline-list">{hourGroups.map(([key,items])=>{const byTopic=new Map<string,typeof items>();for(const item of items){const topicKey=item.news.topicId||item.news.id||item.email.id;const list=byTopic.get(topicKey)||[];list.push(item);byTopic.set(topicKey,list);}const heat=heatByHour[key];return <div className="timeline-hour" key={key}><div className="timeline-hour-heading"><span>{hourLabel(items[0].news.publishedAt||items[0].email.internalDate)}</span><span className="heat-meter"><i style={{width:Math.max(6,Math.min(100,heat?.heat||0))+"%"}}/></span><small>{heat?.count||items.length}件</small></div>{[...byTopic.values()].map((topicItems,i)=>topicItems.length>1?<details className="trend-topic-group" key={topicItems[0].news.topicId||i}><summary><span>{topicItems[0].news.importanceStars&&topicItems[0].news.importanceStars>=4?"🔥 ":""}関連記事 {topicItems.length}件</span><small>タップで展開</small></summary><div>{topicItems.map(x=>renderNewsRow(x.email,x.news,x.newsIndex,openReader))}</div></details>:renderNewsRow(topicItems[0].email,topicItems[0].news,topicItems[0].newsIndex,openReader))}</div>;})}{!filtered.length&&<div className="empty-state">該当するニュースがありません。</div>}</section>
+    <section className="timeline-list">{hourGroups.map(([key,items])=>{const byTopic=new Map<string,typeof items>();for(const item of items){const topicKey=item.news.topicId||item.news.id||item.email.id;const list=byTopic.get(topicKey)||[];list.push(item);byTopic.set(topicKey,list);}const heat=heatByHour[key];return <div className="timeline-hour" key={key}><div className="timeline-hour-heading"><span>{hourLabel(items[0].news.publishedAt||items[0].email.internalDate)}</span><span className="heat-meter"><i style={{width:Math.max(6,Math.min(100,heat?.heat||0))+"%"}}/></span><small>{heat?.count||items.length}件</small></div>{[...byTopic.values()].map((topicItems,i)=>topicItems.length>1?<details className="trend-topic-group" key={topicItems[0].news.topicId||i}><summary><span>{topicItems[0].news.importanceStars&&topicItems[0].news.importanceStars>=4?"🔥 ":""}関連記事 {topicItems.length}件</span><small>タップで展開</small></summary><div>{topicItems.map(x=><NewsRow email={x.email} news={x.news} newsIndex={x.newsIndex} openReader={openReader} />)}</div></details>:<NewsRow email={topicItems[0].email} news={topicItems[0].news} newsIndex={topicItems[0].newsIndex} openReader={openReader} />)}</div>;})}{!filtered.length&&<div className="empty-state">該当するニュースがありません。</div>}</section>
     <footer className="timeline-footer">FNN · Yahoo!ニュース · ITmedia · GIGAZINE · 日経メール</footer>
   </main>;
 }
