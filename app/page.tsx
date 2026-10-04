@@ -38,7 +38,53 @@ function cleanNewsTitle(title:string){return title.replace(/\s*[（(][^()（）]
 function titleTag(title:string){const m=title.match(/[（(]([^()（）]{1,30})[)）]$/);if(m)return m[1];const b=title.match(/^[【\[]([^】\]]{1,24})[】\]]/);return b?b[1]:"";}
 function isSportsTitle(title:string){return /プロ野球|野球|サッカー|試合|対戦|スコア|アジア大会|Jリーグ|NPB|DeNA|阪神|ロッテ|楽天|巨人|広島|中日|ヤクルト|ソフトバンク|日本ハム|オリックス|西武/.test(title);}
 function relatedGroupKey(news:News){if(isSportsTitle(news.title))return "sports";const text=(cleanNewsTitle(news.title)+" "+(news.category||"")).replace(/[、。！？・：:]/g," ").toLowerCase();const words=text.split(/\s+/).filter(w=>w.length>=2).slice(0,6);return words.length>=2?((news.category||"other")+":"+words.slice(0,2).join("|")):"";}
-function renderNewsRow(email:Email,news:News,newsIndex:number,openReader:(email:Email,newsIndex:number)=>void){const n=news.importanceStars||1;return <article className={"timeline-item stars-"+n} key={(news.id||email.id)+":"+newsIndex}><time>{timeOf(news.publishedAt||email.internalDate)}</time><div className="timeline-rail"><span/></div><button className={"timeline-main stars-"+n} onClick={()=>openReader(email,newsIndex)}><div className="timeline-title-row"><div className="timeline-title">{cleanNewsTitle(news.title)}</div>{titleTag(news.title)&&<span className="title-tag">{titleTag(news.title)}</span>}</div>{n>=4&&<div className="trend-badges">{(news.trendBadges||[]).map(b=><span key={b}>{b}</span>)}</div>}{n>=3&&<div className="timeline-summary">{tinySummary(news.body,news.title)}</div>}</button><div className="timeline-meta"><div className="timeline-source">{news.source||email.from}</div><div className={"timeline-stars stars-display-"+n} aria-label={"重要度 "+n+" / 5"}>{n>=4?stars(n):n===3?"★3":"★"+n}</div></div></article>);}
+function renderNewsRow(
+  email: Email,
+  news: News,
+  newsIndex: number,
+  openReader: (email: Email, newsIndex: number) => void
+) {
+  const n = news.importanceStars || 1;
+  const tag = titleTag(news.title);
+
+  return (
+    <article
+      className={"timeline-item stars-" + n}
+      key={(news.id || email.id) + ":" + newsIndex}
+    >
+      <time>{timeOf(news.publishedAt || email.internalDate)}</time>
+      <div className="timeline-rail"><span /></div>
+      <button
+        className={"timeline-main stars-" + n}
+        onClick={() => openReader(email, newsIndex)}
+      >
+        <div className="timeline-title-row">
+          <div className="timeline-title">{cleanNewsTitle(news.title)}</div>
+          {tag && <span className="title-tag">{tag}</span>}
+        </div>
+        {n >= 4 && (
+          <div className="trend-badges">
+            {(news.trendBadges || []).map(b => <span key={b}>{b}</span>)}
+          </div>
+        )}
+        {n >= 3 && (
+          <div className="timeline-summary">
+            {tinySummary(news.body, news.title)}
+          </div>
+        )}
+      </button>
+      <div className="timeline-meta">
+        <div className="timeline-source">{news.source || email.from}</div>
+        <div
+          className={"timeline-stars stars-display-" + n}
+          aria-label={"重要度 " + n + " / 5"}
+        >
+          {n >= 4 ? stars(n) : n === 3 ? "★3" : "★" + n}
+        </div>
+      </div>
+    </article>
+  );
+}
 
 
 export default function Home(){
