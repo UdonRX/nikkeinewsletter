@@ -6,7 +6,7 @@ type News = {
   id?: string; title: string; body: string; url?: string; index: number;
   imageUrl?: string; imageAlt?: string; source?: string; category?: string;
   tags?: string[]; importanceScore?: number; trendScore?: number;
-  importanceStars?: number; publishedAt?: string;
+  importanceStars?: number; publishedAt?: string; trendBadges?: string[]; topicId?: string;
 };
 type Email = {
   id: string; subject: string; receivedAt: string; internalDate: string;
@@ -28,6 +28,8 @@ function mergeGmailEmails(cached:Email[],incoming:Email[],deletedIds:string[],fu
   return [...map.values()].sort((a,b)=>Number(b.internalDate||0)-Number(a.internalDate||0)).slice(0,30);
 }
 function dateKey(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return "";const p=new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(d);return `${p.find(x=>x.type==="year")?.value}-${p.find(x=>x.type==="month")?.value}-${p.find(x=>x.type==="day")?.value}`;}
+function heatKey(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return "";return new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",hour12:false}).format(d);}
+function hourLabel(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return "";const h=Number(new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",hour:"2-digit",hour12:false}).format(d));return String(h).padStart(2,"0")+":00 - "+String((h+1)%24).padStart(2,"0")+":00;}
 function displayDate(value:string){const d=new Date(value);if(Number.isNaN(d.getTime()))return value;return new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",month:"long",day:"numeric",weekday:"short"}).format(d);}
 function timeOf(value?:string){if(!value)return "--:--";const d=new Date(value);if(Number.isNaN(d.getTime()))return "--:--";return new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",hour:"2-digit",minute:"2-digit",hour12:false}).format(d);}
 function stars(count=1){const n=Math.max(1,Math.min(5,count));return "★".repeat(n);}
@@ -36,7 +38,7 @@ function cleanNewsTitle(title:string){return title.replace(/\s*[（(][^()（）]
 function titleTag(title:string){const m=title.match(/[（(]([^()（）]{1,30})[)）]$/);if(m)return m[1];const b=title.match(/^[【\[]([^】\]]{1,24})[】\]]/);return b?b[1]:"";}
 function isSportsTitle(title:string){return /プロ野球|野球|サッカー|試合|対戦|スコア|アジア大会|Jリーグ|NPB|DeNA|阪神|ロッテ|楽天|巨人|広島|中日|ヤクルト|ソフトバンク|日本ハム|オリックス|西武/.test(title);}
 function relatedGroupKey(news:News){if(isSportsTitle(news.title))return "sports";const text=(cleanNewsTitle(news.title)+" "+(news.category||"")).replace(/[、。！？・：:]/g," ").toLowerCase();const words=text.split(/\s+/).filter(w=>w.length>=2).slice(0,6);return words.length>=2?((news.category||"other")+":"+words.slice(0,2).join("|")):"";}
-function renderNewsRow(email:Email,news:News,newsIndex:number,openReader:(email:Email,newsIndex:number)=>void){const n=news.importanceStars||1;return <article className={"timeline-item stars-"+n} key={(news.id||email.id)+":"+newsIndex}><time>{timeOf(news.publishedAt||email.internalDate)}</time><div className="timeline-rail"><span/></div><button className={"timeline-main stars-"+n} onClick={()=>openReader(email,newsIndex)}><div className="timeline-title-row"><div className="timeline-title">{cleanNewsTitle(news.title)}</div>{titleTag(news.title)&&<span className="title-tag">{titleTag(news.title)}</span>}</div>{n>=3&&<div className="timeline-summary">{tinySummary(news.body,news.title)}</div>}</button><div className="timeline-meta"><div className="timeline-source">{news.source||email.from}</div><div className={"timeline-stars stars-display-"+n} aria-label={"重要度 "+n+" / 5"}>{n>=4?stars(n):n===3?"★3":"★"+n}</div></div></article>;}
+function renderNewsRow(email:Email,news:News,newsIndex:number,openReader:(email:Email,newsIndex:number)=>void){const n=news.importanceStars||1;return <article className={"timeline-item stars-"+n} key={(news.id||email.id)+":"+newsIndex}><time>{timeOf(news.publishedAt||email.internalDate)}</time><div className="timeline-rail"><span/></div><button className={"timeline-main stars-"+n} onClick={()=>openReader(email,newsIndex)}><div className="timeline-title-row"><div className="timeline-title">{cleanNewsTitle(news.title)}</div>{titleTag(news.title)&&<span className="title-tag">{titleTag(news.title)}</span>}</div>{n>=4&&<div className="trend-badges">{(news.trendBadges||[]).map(b=><span key={b}>{b}</span>)}</div>}{n>=3&&<div className="timeline-summary">{tinySummary(news.body,news.title)}</div>}</button><div className="timeline-meta"><div className="timeline-source">{news.source||email.from}</div><div className={"timeline-stars stars-display-"+n} aria-label={"重要度 "+n+" / 5"}>{n>=4?stars(n):n===3?"★3":"★"+n}</div></div></article>);}
 
 
 export default function Home(){
@@ -46,6 +48,7 @@ export default function Home(){
   const [query,setQuery]=useState("");
   const [importanceFilter,setImportanceFilter]=useState<"all"|"2plus"|"3"|"4plus">("all");
   const [gmailConnected,setGmailConnected]=useState(false);
+  const [heatByHour,setHeatByHour]=useState<Record<string,{count:number;heat:number}>>({});
   const [reader,setReader]=useState<{emailId:string;newsIndex:number;data?:ReaderData}|null>(null);
   const [fontScale,setFontScale]=useState(1);
   const [shorts,setShorts]=useState<{items:Array<{email:Email;news:News;newsIndex:number}>;index:number}|null>(null);
@@ -66,6 +69,7 @@ export default function Home(){
         console.log("[NEWS_LOAD] JSON_PARSED",{debugId,elapsedMs:Math.round(performance.now()-jsonStarted),totalMs:Math.round(performance.now()-started),emailCount:Array.isArray(data.emails)?data.emails.length:0,articleCount:Array.isArray(data.emails)?data.emails.reduce((n:number,e:Email)=>n+(e.news?.length||0),0):0,gmailConnected:Boolean(data.gmailConnected),gmailFullSync:Boolean(data.gmailSync?.fullSync)});
         if(!r.ok)throw new Error(data.error||"ニュースを取得できませんでした");
         setGmailConnected(Boolean(data.gmailConnected));
+        setHeatByHour(data.heatByHour&&typeof data.heatByHour==="object"?data.heatByHour:{});
         const sync=data.gmailSync;
         const incomingGmail:Array<Email>=Array.isArray(data.emails)?data.emails.filter((e:Email)=>e.from?.includes("日経")||e.id?.startsWith("nikkei:")):[];
         let mergedGmail=cache.emails;
@@ -80,7 +84,7 @@ export default function Home(){
 
   const timeline=useMemo(()=>{const rows:Array<{email:Email;news:News;newsIndex:number;order:number}>=[];for(const email of emails)email.news.forEach((news,newsIndex)=>rows.push({email,news,newsIndex,order:newsIndex}));rows.sort((a,b)=>{const at=new Date(a.news.publishedAt||a.email.internalDate).getTime(),bt=new Date(b.news.publishedAt||b.email.internalDate).getTime();return bt-at||b.order-a.order;});return rows;},[emails]);
   const filtered=useMemo(()=>{const q=query.trim().toLowerCase();return timeline.filter(x=>{const n=x.news.importanceStars||1;const mf=importanceFilter==="all"||(importanceFilter==="2plus"&&n>=2)||(importanceFilter==="3"&&n===3)||(importanceFilter==="4plus"&&n>=4);const mq=!q||[x.news.title,x.news.body,x.news.source,x.news.category].join(" ").toLowerCase().includes(q);return mf&&mq;});},[timeline,query,importanceFilter]);
-  const groups=useMemo(()=>{const map=new Map<string,typeof filtered>();for(const item of filtered){const key=dateKey(item.news.publishedAt||item.email.internalDate);const list=map.get(key)||[];list.push(item);map.set(key,list);}return [...map.entries()];},[filtered]);
+  const hourGroups=useMemo(()=>{const map=new Map<string,typeof filtered>();for(const item of filtered){const key=heatKey(item.news.publishedAt||item.email.internalDate);const list=map.get(key)||[];list.push(item);map.set(key,list);}return [...map.entries()];},[filtered]);
 
   async function openReader(email:Email,newsIndex:number){const news=email.news[newsIndex];if(!news)return;setReader({emailId:email.id,newsIndex});setFontScale(1);try{const params=new URLSearchParams({url:news.url||"",title:news.title,body:news.body||""});const r=await fetch("/api/article?"+params.toString(),{cache:"no-store"});const data=await r.json();if(r.ok)setReader(current=>current?{...current,data}:current);}catch{}}
   function openShorts(){if(filtered.length)setShorts({items:filtered,index:0});}
@@ -96,7 +100,7 @@ export default function Home(){
     <div className="timeline-tools"><div className="search-wrap"><span>⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="ニュースを検索"/></div><button className="shorts-tool" onClick={openShorts}>Shorts</button></div>
     <div className="importance-filters" aria-label="重要度フィルター">{([["all","すべて"],["2plus","★2以上"],["3","★3のみ"],["4plus","★4以上"]] as const).map(([value,label])=><button key={value} className={importanceFilter===value?"active":""} onClick={()=>setImportanceFilter(value)}>{label}</button>)}</div>
     <div className="timeline-count">{filtered.length.toLocaleString("ja-JP")} 件</div>
-    <section className="timeline-list">{groups.map(([key,items])=>{const related:Array<Array<typeof items[number]>>=[];for(const item of items){const k=relatedGroupKey(item.news);const prev=related[related.length-1];if(prev&&k&&relatedGroupKey(prev[0].news)===k&&((item.news.importanceStars||1)===(prev[0].news.importanceStars||1)))prev.push(item);else related.push([item]);}return <div className="timeline-day" key={key}><div className="timeline-date-heading">{displayDate(items[0].news.publishedAt||items[0].email.internalDate)}</div>{related.map((group,i)=>group.length>1?<details className="related-group" key={"related-"+i}><summary><span>{isSportsTitle(group[0].news.title)?"スポーツ・試合":"関連ニュース"} {group.length}件</span><small>タップして表示</small></summary><div>{group.map(x=>renderNewsRow(x.email,x.news,x.newsIndex,openReader))}</div></details>:renderNewsRow(group[0].email,group[0].news,group[0].newsIndex,openReader))}</div>;})}{!filtered.length&&<div className="empty-state">該当するニュースがありません。</div>}</section>
+    <section className="timeline-list">{hourGroups.map(([key,items])=>{const byTopic=new Map<string,typeof items>();for(const item of items){const topicKey=item.news.topicId||item.news.id||item.email.id;const list=byTopic.get(topicKey)||[];list.push(item);byTopic.set(topicKey,list);}const heat=heatByHour[key];return <div className="timeline-hour" key={key}><div className="timeline-hour-heading"><span>{hourLabel(items[0].news.publishedAt||items[0].email.internalDate)}</span><span className="heat-meter"><i style={{width:Math.max(6,Math.min(100,heat?.heat||0))+"%"}}/></span><small>{heat?.count||items.length}件</small></div>{[...byTopic.values()].map((topicItems,i)=>topicItems.length>1?<details className="trend-topic-group" key={topicItems[0].news.topicId||i}><summary><span>{topicItems[0].news.importanceStars&&topicItems[0].news.importanceStars>=4?"🔥 ":""}関連記事 {topicItems.length}件</span><small>タップで展開</small></summary><div>{topicItems.map(x=>renderNewsRow(x.email,x.news,x.newsIndex,openReader))}</div></details>:renderNewsRow(topicItems[0].email,topicItems[0].news,topicItems[0].newsIndex,openReader))}</div>;})}{!filtered.length&&<div className="empty-state">該当するニュースがありません。</div>}</section>
     <footer className="timeline-footer">FNN · Yahoo!ニュース · ITmedia · GIGAZINE · 日経メール</footer>
   </main>;
 }
