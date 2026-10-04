@@ -11,8 +11,6 @@ type FeedConfig={source:NewsArticle["source"];url:string;categoryHint?:NewsCateg
 export const RSS_FEEDS:FeedConfig[]=[
  {source:"FNN",url:"https://www.fnn.jp/list/feed/rss",categoryHint:"society",tags:["FNNプライムオンライン"]},
  {source:"Yahoo!ニュース",url:"https://news.yahoo.co.jp/rss/categories/world.xml",tags:["国際","外交","海外政治","世界経済","社会","科学","ライフ"]},
- {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/index"},
- {source:"マイナビニュース",url:"https://news.mynavi.jp/rss/techplus/enterprise",categoryHint:"business",tags:["企業IT","企業","IT"]},
  {source:"GIGAZINE",url:"https://gigazine.net/news/rss_2.0/",categoryHint:"technology",tags:["テクノロジー","AI","セキュリティ"]},
  {source:"マイナビニュース",url:"https://scienceportal.jst.go.jp/feed/rss.xml",categoryHint:"science",tags:["サイエンス"]},
  {source:"マイナビニュース",url:"https://sorae.info/feed",categoryHint:"science",tags:["宇宙・航空"]},
