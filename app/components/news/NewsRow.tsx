@@ -44,7 +44,18 @@ export function NewsRow({
   const source=news.source||email.from||"ニュース";
   const summary=tinySummary(article?.contentHtml ? article.contentHtml.replace(/<[^>]+>/g," ") : news.body,news.title);
 
-  async function toggleExpanded(){\n    const next=!expanded;\n    setExpanded(next);\n    if(!next || article || !news.url || articleLoading)return;\n    setArticleLoading(true);\n    try{\n      const params=new URLSearchParams({url:news.url,title:news.title,body:news.body||""});\n      const response=await fetch("/api/article?"+params.toString(),{cache:"no-store"});\n      const data=await response.json().catch(()=>null);\n      if(response.ok&&data)setArticle(data);\n    }catch{}finally{setArticleLoading(false);}\n  }
+  async function toggleExpanded(){
+    const next=!expanded;
+    setExpanded(next);
+    if(!next || article || !news.url || articleLoading)return;
+    setArticleLoading(true);
+    try{
+      const params=new URLSearchParams({url:news.url,title:news.title,body:news.body||""});
+      const response=await fetch("/api/article?"+params.toString(),{cache:"no-store"});
+      const data=await response.json().catch(()=>null);
+      if(response.ok&&data)setArticle(data);
+    }catch{}finally{setArticleLoading(false);}
+  }
 
   return <article className={"timeline-item importance-"+n+(expanded?" is-expanded":"")}>
     <div className="timeline-node" aria-hidden="true"><span/></div>
