@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ALLOWED_HOSTS=["afpbb.com","fnn.jp","newsdig.tbs.co.jp","news.mynavi.jp","itmedia.co.jp","rss.itmedia.co.jp","nikkei.com"];
+const ALLOWED_HOSTS=["afpbb.com","fnn.jp","newsdig.tbs.co.jp","news.mynavi.jp","itmedia.co.jp","rss.itmedia.co.jp","nikkei.com","yahoo.co.jp","gigazine.net","webtan.impress.co.jp","news.google.com","googleusercontent.com"];
 
 function allowedHost(hostname:string){const h=hostname.toLowerCase();return ALLOWED_HOSTS.some(x=>h===x||h.endsWith("."+x));}
 function escapeHtml(v:string){return v.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");}
@@ -45,8 +45,8 @@ export async function GET(req:NextRequest){
     const structured=jsonLdArticle(doc);
     const ogTitle=doc.querySelector('meta[property="og:title"]')?.getAttribute("content")||"";
     const ogImage=doc.querySelector('meta[property="og:image"]')?.getAttribute("content")||"";
-    const title=structured?.headline||ogTitle||doc.querySelector("h1")?.textContent?.trim()||fallbackTitle;
-    const imageRaw=typeof structured?.image==="string"?structured.image:(structured?.image as any)?.url||ogImage;
+    const title=structured?.headline||ogTitle||doc.querySelector("h1")?.textContent?.trim()||fallbackTitle;\n    const articleImage=doc.querySelector("article img[src],main img[src]")?.getAttribute("src")||"";
+    const imageRaw=typeof structured?.image==="string"?structured.image:(structured?.image as any)?.url||ogImage||articleImage;
     const imageUrl=imageRaw?new URL(imageRaw,finalUrl).toString():"";
     if(structured?.body){const t=trimPaywall(structured.body);return NextResponse.json({title,imageUrl,contentHtml:textToHtml(t.text),url:finalUrl.toString(),available:Boolean(t.text),paywalled:t.paywalled,source:"public_article"});}
     const candidates=['[itemprop="articleBody"]','article','main',[...doc.querySelectorAll("div")].sort((a,b)=>(b.textContent?.length||0)-(a.textContent?.length||0))[0]?.tagName==="DIV"?".article-body":""].filter(Boolean) as string[];
