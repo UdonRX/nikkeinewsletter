@@ -28,8 +28,8 @@ function twittrendObservedAt(updateText:string,now=new Date()){
     const utc=Date.UTC(year,month-1,day+offset,hour-9,minute,0);
     return new Date(utc);
   });
-  candidates.sort((a,b)=>Math.abs(a.getTime()-now.getTime())-Math.abs(b.getTime()-now.getTime()));
-  return candidates[0]?.toISOString()||null;
+  const past=candidates.filter(d=>d.getTime()<=now.getTime()).sort((a,b)=>b.getTime()-a.getTime());
+  return (past[0]||candidates.sort((a,b)=>a.getTime()-b.getTime())[0])?.toISOString()||null;
 }
 
 function parseTwittrendJapan(html:string,now=new Date()):TrendKeyword[]{
