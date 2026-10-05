@@ -18,6 +18,54 @@ function editionInfo(internalDate: string | undefined, dateHeader: string, conte
   return {kind:hour>=5&&hour<11?"朝刊":hour>=11&&hour<17?"昼刊":"夕刊",issueDate:`${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`};
 }
 
+async function fetchArticlePublishedAt(rawUrl:string):Promise<string|undefined>{
+  try{
+    const response=await fetch(rawUrl,{redirect:"follow",headers:{"User-Agent":"NikkeiNewsReader/1.0","Accept":"text/html,application/xhtml+xml","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"},cache:"no-store"});
+    if(!response.ok)return undefined;
+    const finalUrl=new URL(response.url||rawUrl);
+    if(!/^(?:www\\.)?nikkei\\.com$/i.test(finalUrl.hostname))return undefined;
+    const html=await response.text();
+    const {JSDOM}=await import("jsdom");
+    const doc=new JSDOM(html).window.document;
+    const candidates=[
+      doc.querySelector('meta[property="article:published_time"]')?.getAttribute("content"),
+      doc.querySelector('meta[name="article:published_time"]')?.getAttribute("content"),
+      doc.querySelector('meta[property="og:published_time"]')?.getAttribute("content"),
+      doc.querySelector('time[datetime]')?.getAttribute("datetime"),
+      doc.querySelector('meta[itemprop="datePublished"]')?.getAttribute("content"),
+      doc.querySelector('[itemprop="datePublished"]')?.getAttribute("datetime"),
+      doc.querySelector('[itemprop="datePublished"]')?.textContent,
+    ].filter(Boolean) as string[];
+    for(const value of candidates){
+      const d=new Date(value);
+      if(!Number.isNaN(d.getTime()))return d.toISOString();
+      const m=value.match(/(20\\d{2})[年\\/.-](\\d{1,2})[月\\/.-](\\d{1,2})日?[^\\d]{0,20}(\\d{1,2}):(\\d{2})/);
+      if(m){
+        const d2=new Date(Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3]),Number(m[4])-9,Number(m[5])));
+        if(!Number.isNaN(d2.getTime()))return d2.toISOString();
+      }
+    }
+    const ldScripts=Array.from(doc.querySelectorAll('script[type="application/ld+json"]'));
+    for(const script of ldScripts){
+      try{
+        const raw=JSON.parse(script.textContent||"");
+        const list=Array.isArray(raw)?raw:(raw?.["@graph"]||[raw]);
+        for(const item of list){
+          if(!item||typeof item!=="object")continue;
+          const type=Array.isArray(item["@type"])?item["@type"].join(" "):String(item["@type"]||"");
+          if(!/NewsArticle|Article/i.test(type))continue;
+          for(const key of ["datePublished","dateCreated"]){
+            const value=typeof item[key]==="string"?item[key]:"";
+            const d=new Date(value);
+            if(value&&!Number.isNaN(d.getTime()))return d.toISOString();
+          }
+        }
+      }catch{}
+    }
+  }catch{}
+  return undefined;
+}
+
 function parseNikkeiNews(parsed:any[],mailId:string,sourceIndex:number,publishedAt:string){
   return parsed.map((n:any,i:number)=>({
     id:`nikkei:${mailId}:${i}`, source:"日経", title:n.title||"無題", url:n.url||"", publishedAt:n.publishedAt||publishedAt,
@@ -42,6 +90,8 @@ async function processGmailMessage(full:any){
   const parseStarted=Date.now();
   const parsedEmail=parseNikkeiEmail(html,text,full.internalDate ? new Date(Number(full.internalDate)).toISOString() : dateHeader);
   const htmlParseAndExtractionMs=Date.now()-parseStarted;
+  const resolved=await Promise.all(parsedEmail.map(async(n:any)=>({n,publishedAt:n.url?await fetchArticlePublishedAt(n.url):undefined})));
+  for(const item of resolved){if(item.publishedAt)item.n.publishedAt=item.publishedAt;}
   const parsedArticles=parseNikkeiNews(parsedEmail,id,0,publishedAt);
   console.log("[GMAIL] MESSAGE",{
     id,from,kind,subject:header(full,"Subject"),emailParserArticles:parsedEmail.length,validArticles:parsedArticles.length,
