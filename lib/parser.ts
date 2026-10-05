@@ -17,7 +17,7 @@ const NOISE =
 const SECTION =
   /^(注目ニュース|特報|マーケット|ニュース解説|連載・コラム|Visual & Podcast|Notice|セクション|オピニオン|経済|政治|ビジネス|金融|マネーのまなび|テック|国際|スポーツ|社会・調査|地域|文化|ライフスタイル|おすすめ映像|BUSINESS DAILY)$/;
 
-const URL_OK = /^https?:\/\/(?:[^\s"'<>]*\.)?nikkei\.com\//i;
+const URL_OK = /^https?:\/\/(?:[^\s"'<>]*\.)?(?:nikkei\.com|mxb\.nikkei\.com)\//i;
 
 function clean(s: string) {
   return s.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
