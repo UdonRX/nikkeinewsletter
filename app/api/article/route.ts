@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ALLOWED_HOSTS=["afpbb.com","fnn.jp","newsdig.tbs.co.jp","news.mynavi.jp","itmedia.co.jp","rss.itmedia.co.jp","nikkei.com","yahoo.co.jp","gigazine.net","webtan.impress.co.jp","news.google.com","googleusercontent.com"];
+const ALLOWED_HOSTS=["mxb.nikkei.com","afpbb.com","fnn.jp","newsdig.tbs.co.jp","news.mynavi.jp","itmedia.co.jp","rss.itmedia.co.jp","nikkei.com","yahoo.co.jp","gigazine.net","webtan.impress.co.jp","news.google.com","googleusercontent.com"];
 
 function allowedHost(hostname:string){const h=hostname.toLowerCase();return ALLOWED_HOSTS.some(x=>h===x||h.endsWith("."+x));}
 function escapeHtml(v:string){return v.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");}
