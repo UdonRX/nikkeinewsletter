@@ -42,29 +42,15 @@ export function NewsRow({
   const source=news.source||email.from||"ニュース";
   const summary=tinySummary(news.body,news.title);
 
-  function toggle(){
-    setExpanded(value=>!value);
-  }
-
-  function onKeyDown(event:React.KeyboardEvent<HTMLButtonElement>){
-    if(event.key==="Enter"||event.key===" "){
-      event.preventDefault();
-      toggle();
-    }
-  }
-
   return <article className={"timeline-item importance-"+n+(expanded?" is-expanded":"")}>
-    <div className="timeline-node" aria-hidden="true">
-      <span/>
-    </div>
+    <div className="timeline-node" aria-hidden="true"><span/></div>
 
     <div className="timeline-card-wrap">
       <button
         type="button"
         className="timeline-card-trigger"
         aria-expanded={expanded}
-        onClick={toggle}
-        onKeyDown={onKeyDown}
+        onClick={()=>setExpanded(value=>!value)}
       >
         <span className="timeline-card-top">
           <span className="timeline-card-title">{title}</span>
