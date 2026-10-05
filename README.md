@@ -102,3 +102,18 @@ NewsData.ioを有効にする場合は、Vercel/実行環境に次のサーバ�
 未設定の場合もGoogle Trends・Yahoo!リアルタイム検索・既存RSS・日経Gmailだけでタイムライン生成を継続する。
 
 ログには、取得件数、重複排除後件数、topic/event/article件数、Eventの関連記事数、trendScore、importanceScore、各取得元のエラーを出力する。
+
+
+## Xトレンド（Twittrend）
+
+XトレンドはX公式APIではなく、Twittrendの日本トレンド公開ページ（https://twittrend.jp/trend/）をサーバー側から取得・解析している。
+
+- 対象: Twittrendの「日本」セクションのみ
+- 取得: Next.js/Vercelサーバー側の fetch()
+- キャッシュ: 10分
+- User-Agent: `nikkeinewsletter-personal/1.0`
+- X公式APIのBearer TokenやX APIキーは使用しない
+- Twittrendから取得したトレンドはニュース記事ではなく、X上の話題を示す `source: "x"` のトピックとして扱う
+- 取得失敗時は空配列として扱い、Google Trends・Yahoo!リアルタイム検索・NewsData・日経メール・RSSの処理を止めない
+
+※ Twittrend管理者から、個人利用の自分専用アプリでの取得について事前に個別許可を得た前提で使用する。
