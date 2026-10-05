@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { Email, News, ReaderData } from "@/lib/news/types";
-import { cleanNewsTitle, stars, timeOf, tinySummary } from "@/lib/news/ui";
+import { cleanNewsTitle, stars, tinySummary } from "@/lib/news/ui";
 import { NewsRow } from "@/app/components/news/NewsRow";
 
 const GMAIL_CACHE_KEY="nikkei-news-gmail-cache-v2";
