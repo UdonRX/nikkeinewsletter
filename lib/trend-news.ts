@@ -67,3 +67,60 @@ function diversifyTrendArticles(articles:TrendNewsArticle[]){
 function sim(a:string,b:string){const x=norm(a),y=norm(b);if(!x||!y)return 0;if(x.includes(y)||y.includes(x))return 1;const grams=(s:string)=>new Set(Array.from({length:Math.max(0,s.length-1)},(_,i)=>s.slice(i,i+2)));const ax=grams(x),by=grams(y);let n=0;for(const g of ax)if(by.has(g))n++;return n/Math.max(1,ax.size+by.size-n);}
 function topicsOf(articles:TrendNewsArticle[]):NewsTopic[]{const topics:NewsTopic[]=[];for(const a of articles){const t=topics.find(t=>sim(t.title,a.title)>=0.38||a.trendTerms.some(k=>t.articles.some(x=>x.trendTerms.includes(k))));if(t)t.articles.push(a);else topics.push({id:"topic:"+a.id,title:a.title,summary:a.description,publishedAt:a.publishedAt,impactScore:a.impactScore,importanceStars:a.importanceStars,trendBadges:[],heat:0,articles:[a]});}for(const t of topics){const all=t.articles;const g=all.filter(a=>a.googleRank).sort((a,b)=>(a.googleRank||99)-(b.googleRank||99))[0];const y=all.filter(a=>a.yahooRank).sort((a,b)=>(a.yahooRank||99)-(b.yahooRank||99))[0];const relatedBonus=Math.min(3,Math.floor((all.length-1)/2));const baseImpact=Math.max(...all.map(a=>a.impactScore));t.impactScore=Math.min(15,baseImpact+relatedBonus);t.importanceStars=t.impactScore>=13?5:t.impactScore>=9?4:t.impactScore>=5?3:t.impactScore>=2?2:1;t.trendBadges=[];if(g?.googleRank&&g.googleRank<=5)t.trendBadges.push("google");if(y?.yahooRank&&y.yahooRank<=5)t.trendBadges.push("yahoo");const sourceCount=new Set(all.map(a=>a.source).filter(Boolean)).size;if(sourceCount>=3)t.trendBadges.push("coverage");t.heat=Math.min(100,t.impactScore*6+Math.min(40,all.length*8));}return topics.sort((a,b)=>new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());}
 export async function collectTrendNews(){const started=Date.now();const[google,yahoo]=await Promise.all([fetchGoogleTrends(),fetchYahooRealtimeTrends()]);const trends=merge(google,yahoo);const articles=await fetchNewsData(trends);const topics=topicsOf(articles);const heatByHour:Record<string,{count:number;heat:number}>={};for(const t of topics){const key=new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",hour12:false}).format(new Date(t.publishedAt));heatByHour[key]??={count:0,heat:0};heatByHour[key].count+=t.articles.length;heatByHour[key].heat+=t.heat;}console.log("[TREND_PIPELINE] SUMMARY",JSON.stringify({google:google.length,yahoo:yahoo.length,keywords:trends.length,articles:articles.length,topics:topics.length,durationMs:Date.now()-started}));return{google,yahoo,trends,articles,topics,heatByHour};}
+
+
+export type TimelineArticle = {
+  id:string; title:string; summary?:string; description?:string; url?:string; source?:string; category?:string;
+  publishedAt:string; updatedAt?:string; imageUrl?:string; importanceScore?:number; trendScore?:number; keywords?:string[];
+};
+export type TimelineItem = {
+  id:string; type:"article"|"topic"|"event"; title:string; summary?:string; category?:string;
+  publishedAt?:string; detectedAt?:string; updatedAt?:string; trendScore:number; importanceScore:number;
+  source?:string; sourceUrl?:string; imageUrl?:string; keywords?:string[];
+  relatedArticles?:TimelineArticle[]; relatedTopics?:string[]; eventId?:string; rank?:number; searchIncrease?:number; sources?:string[];
+};
+type NewsDataRow={article_id?:string;title?:string;description?:string;content?:string;link?:string;pubDate?:string;source_name?:string;image_url?:string;keywords?:string[];category?:string[]};
+
+async function fetchNewsDataTimeline(terms:TrendKeyword[]){
+  const key=process.env.NEWSDATA_API_KEY||process.env.NEWS_DATA_API_KEY;
+  if(!key){console.warn("[TIMELINE] NEWSDATA_UNAVAILABLE");return{articles:[] as TimelineArticle[],signals:[] as TrendKeyword[]};}
+  const selected=terms.slice().sort((a,b)=>(a.googleRank||99)-(b.googleRank||99)||(a.yahooRank||99)-(b.yahooRank||99)).slice(0,8);
+  const rows:NewsDataRow[]=[];let ok=0;
+  for(const t of selected){try{
+    const q=new URLSearchParams({apikey:key,q:t.term,country:"jp",language:"jp",timeframe:"24",removeduplicate:"1"});
+    const r=await fetch("https://newsdata.io/api/1/latest?"+q,{cache:"no-store"});const j=await r.json().catch(()=>({}));
+    if(!r.ok||j?.status==="error")throw new Error(j?.results?.message||"HTTP "+r.status);
+    if(Array.isArray(j?.results))rows.push(...j.results);ok++;
+  }catch(e){console.warn("[TIMELINE] NEWSDATA_QUERY_ERROR",{keyword:t.term,error:e instanceof Error?e.message:String(e)})}}
+  const seen=new Set<string>(),articles:TimelineArticle[]=[];
+  for(const x of rows){const title=clean(x.title||"");if(!title||!x.link||seen.has(x.article_id||x.link))continue;seen.add(x.article_id||x.link);articles.push({id:"newsdata:"+String(x.article_id||articles.length),title,summary:clean(x.description||x.content||""),description:clean(x.description||x.content||""),url:x.link,source:clean(x.source_name||"NewsData.io"),category:category(title+" "+(x.description||"")),publishedAt:dateOf(x.pubDate||""),imageUrl:x.image_url,keywords:Array.isArray(x.keywords)?x.keywords.slice(0,8):[]})}
+  const signals=selected.filter(t=>articles.some(a=>sim(a.title,t.term)>=.5)).map(t=>({...t,sources:uniq([...(t.sources||[]),"NewsData.io"])}));
+  console.log("[TIMELINE] NEWSDATA",{queries:selected.length,succeeded:ok,raw:rows.length,articles:articles.length,signals:signals.length});
+  return{articles,signals};
+}
+
+function timelineTrend(term:TrendKeyword,all:TrendKeyword[]){const same=all.filter(x=>sim(x.term,term.term)>=.72);const sources=new Set(same.flatMap(x=>x.sources||[]));const rank=term.googleRank||term.yahooRank||99;const base=Math.max(0,58-rank*3);const multi=Math.min(28,Math.max(0,sources.size-1)*14);return Math.round(Math.min(100,(base+multi+Math.min(10,same.length*2))*Math.pow(.5,Math.max(0,(Date.now()-Date.now())/14400000))))}
+function articleTrend(a:TimelineArticle,terms:TrendKeyword[]){const hits=terms.filter(t=>sim(a.title,t.term)>=.48||(a.keywords||[]).some(k=>sim(k,t.term)>=.7));if(!hits.length)return 0;const best=Math.max(...hits.map(t=>timelineTrend(t,terms)));return Math.min(100,Math.round(best+Math.min(20,(hits.length-1)*5)))}
+function articleImportance(a:TimelineArticle,count:number,sources:number){let s=22;const text=a.title+" "+(a.description||"");if(/首相|総理|政府|国会|内閣|日銀|政策金利|地震|台風|戦争|停戦|侵攻|大規模被害|死者|重大事故/.test(text))s+=45;if(/決定|成立|発表|合意|攻撃|逮捕|買収|合併|決算/.test(text))s+=15;if(/スポーツ|芸能|エンタメ|ゲーム/.test(text))s-=10;s+=Math.min(15,(count-1)*4)+Math.min(10,Math.max(0,sources-1)*5);return Math.max(0,Math.min(100,s))}
+function dedupeTimelineArticles(input:TimelineArticle[]){const out:TimelineArticle[]=[];for(const a of input){const dup=out.find(x=>(x.url&&a.url&&x.url===a.url)||(sim(x.title,a.title)>=.86&&Math.abs(new Date(x.publishedAt).getTime()-new Date(a.publishedAt).getTime())<21600000));if(!dup)out.push(a);else{dup.keywords=uniq([...(dup.keywords||[]),...(a.keywords||[])]);if(!dup.imageUrl)dup.imageUrl=a.imageUrl}}return out}
+function buildTimelineEvents(articles:TimelineArticle[],terms:TrendKeyword[]){
+ const groups:TimelineArticle[][]=[];
+ for(const a of articles){const g=groups.find(xs=>xs.some(x=>sim(x.title,a.title)>=.52||(x.keywords||[]).some(k=>(a.keywords||[]).some(q=>sim(k,q)>=.72))));if(g)g.push(a);else groups.push([a])}
+ const events:TimelineItem[]=[];const consumed=new Set<string>();
+ for(const g of groups){const sources=new Set(g.map(x=>x.source).filter(Boolean)),hits=terms.filter(t=>g.some(a=>sim(a.title,t.term)>=.5||(a.keywords||[]).some(k=>sim(k,t.term)>=.72)));const trend=Math.max(0,...hits.map(t=>timelineTrend(t,terms)),...g.map(a=>articleTrend(a,terms))),importance=Math.max(...g.map(a=>articleImportance(a,g.length,sources.size)));if(g.length<2&&!(sources.size>=2&&trend>=60)&&!(trend>=78&&importance>=55))continue;const sorted=g.slice().sort((a,b)=>articleImportance(b,g.length,sources.size)-articleImportance(a,g.length,sources.size));const first=g.slice().sort((a,b)=>new Date(a.publishedAt).getTime()-new Date(b.publishedAt).getTime())[0];const title=hits[0]?.term||sorted[0].title;events.push({id:"event:"+norm(title)+":"+new Date(first.publishedAt).getTime(),type:"event",title,summary:sorted[0].summary||"複数のニュースとトレンドが同じ話題として検出されています。",category:sorted[0].category,publishedAt:first.publishedAt,detectedAt:first.publishedAt,updatedAt:sorted[0].publishedAt,trendScore:trend,importanceScore:importance,source:[...sources].join(" / "),sourceUrl:sorted[0].url,imageUrl:sorted[0].imageUrl,keywords:uniq([...hits.map(x=>x.term),...g.flatMap(x=>x.keywords||[])]).slice(0,10),relatedArticles:sorted.slice(0,12),sources:[...sources]});g.forEach(a=>consumed.add(a.id))}
+ return{events,consumed}
+}
+
+export async function collectTimelineData(nikkeiArticles:TimelineArticle[]=[]){
+ const base=await collectTrendNews();const nd=await fetchNewsDataTimeline(base.trends);const terms=merge(base.trends,nd.signals);
+ const rssMod=await import("@/lib/rss");const rss=await rssMod.fetchNewsArticles(terms.map(x=>x.term));
+ const rssArticles:TimelineArticle[]=rss.map((a:any)=>({id:"rss:"+a.id,title:a.title,summary:a.description||a.content||"",description:a.description||a.content||"",url:a.url,source:a.source,category:a.primaryCategory||a.category||"other",publishedAt:a.publishedAt,updatedAt:a.updatedAt,imageUrl:a.imageUrl,importanceScore:a.importanceScore,keywords:a.tags||[]}));
+ const articles=dedupeTimelineArticles([...nikkeiArticles,...nd.articles,...rssArticles]).map(a=>({...a,trendScore:articleTrend(a,terms),importanceScore:Math.max(a.importanceScore||0,articleImportance(a,1,1))}));
+ const {events,consumed}=buildTimelineEvents(articles,terms);
+ const topics=terms.map(t=>{const related=articles.filter(a=>!consumed.has(a.id)&&(sim(a.title,t.term)>=.48||(a.keywords||[]).some(k=>sim(k,t.term)>=.72))).slice(0,8);return{id:"topic:"+norm(t.term),type:"topic" as const,title:t.term,summary:"検索・リアルタイムで検出されたキーワード",category:category(t.term),publishedAt:new Date().toISOString(),detectedAt:new Date().toISOString(),trendScore:timelineTrend(t,terms),importanceScore:related.length?Math.round(Math.max(...related.map(a=>a.importanceScore||0))*.65):15,source:(t.sources||[]).join(" / ")||"トレンド",sourceUrl:related[0]?.url,keywords:[t.term],relatedArticles:related,rank:Math.min(t.googleRank||99,t.yahooRank||99)}}).filter(x=>x.trendScore>=8).sort((a,b)=>b.trendScore-a.trendScore).slice(0,28);
+ const eventArticleIds=new Set(events.flatMap(e=>(e.relatedArticles||[]).map(a=>a.id)));
+ const articleItems=articles.filter(a=>!eventArticleIds.has(a.id)).map(a=>({id:a.id,type:"article" as const,title:a.title,summary:a.summary,category:a.category,publishedAt:a.publishedAt,detectedAt:a.publishedAt,updatedAt:a.updatedAt,trendScore:a.trendScore||0,importanceScore:a.importanceScore||0,source:a.source,sourceUrl:a.url,imageUrl:a.imageUrl,keywords:a.keywords,relatedArticles:[a]}));
+ const timeline=[...articleItems,...topics,...events].sort((a,b)=>new Date(b.detectedAt||b.publishedAt||0).getTime()-new Date(a.detectedAt||a.publishedAt||0).getTime());
+ console.log("[TIMELINE] SUMMARY",{google:base.google.length,yahoo:base.yahoo.length,newsdata:nd.articles.length,trendSignals:terms.length,dedupedArticles:articles.length,topics:topics.length,events:events.length,articleItems:articleItems.length,timelineItems:timeline.length,eventArticleLinks:events.map(e=>({id:e.id,articles:e.relatedArticles?.length||0})),scores:timeline.slice(0,20).map(x=>({type:x.type,title:x.title,trendScore:x.trendScore,importanceScore:x.importanceScore}))});
+ return{google:base.google,yahoo:base.yahoo,newsdata:nd.signals,signals:terms,articles,timeline};
+}
