@@ -8,6 +8,7 @@ export type ParsedNews = {
   section?: string;
   imageUrl?: string;
   imageAlt?: string;
+  publishedAt?: string;
 };
 
 const NOISE =
@@ -108,10 +109,57 @@ function imageNearAnchor(a: Element, baseUrl: string) {
   return null;
 }
 
-export function parseNikkeiEmail(html: string, textFallback: string): ParsedNews[] {
+function tokyoDateParts(value: string | undefined) {
+  const d = value ? new Date(value) : new Date();
+  const safe = Number.isNaN(d.getTime()) ? new Date() : d;
+  const parts = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(safe);
+  return {
+    year: Number(parts.find((p) => p.type === "year")?.value || safe.getFullYear()),
+    month: Number(parts.find((p) => p.type === "month")?.value || safe.getMonth() + 1),
+    day: Number(parts.find((p) => p.type === "day")?.value || safe.getDate()),
+  };
+}
+
+function toIsoTokyo(year: number, month: number, day: number, hour: number, minute: number) {
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return undefined;
+  const value = new Date(Date.UTC(year, month - 1, day, hour - 9, minute));
+  return Number.isNaN(value.getTime()) ? undefined : value.toISOString();
+}
+
+function extractPublishedAt(text: string, baseDate?: string) {
+  const normalized = clean(text).replace(/\u3000/g, " ");
+  if (!normalized) return undefined;
+  const base = tokyoDateParts(baseDate);
+
+  const fullDatePatterns = [
+    /(20\d{2})[年\/.-](\d{1,2})[月\/.-](\d{1,2})日?[^\d]{0,16}(\d{1,2}):(\d{2})/,
+    /(\d{1,2})月(\d{1,2})日[^\d]{0,16}(\d{1,2}):(\d{2})/,
+    /(\d{1,2})[\/.-](\d{1,2})[^\d]{0,16}(\d{1,2}):(\d{2})/,
+  ];
+
+  for (const pattern of fullDatePatterns) {
+    const match = normalized.match(pattern);
+    if (!match) continue;
+    if (match.length === 6) {
+      const iso = toIsoTokyo(Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]));
+      if (iso) return iso;
+    } else {
+      const iso = toIsoTokyo(base.year, Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4]));
+      if (iso) return iso;
+    }
+  }
+
+  const timeMatches = [...normalized.matchAll(/(?:^|[^\d])(\d{1,2}):(\d{2})(?!\d)/g)];
+  if (timeMatches.length === 1) {
+    return toIsoTokyo(base.year, base.month, base.day, Number(timeMatches[0][1]), Number(timeMatches[0][2]));
+  }
+  return undefined;
+}
+
+export function parseNikkeiEmail(html: string, textFallback: string, baseDate?: string): ParsedNews[] {
   const started = Date.now();
   if (!html) {
-    const out = parseText(textFallback);
+    const out = parseText(textFallback, baseDate);
     console.log("[GMAIL_PARSE] TEXT_FALLBACK", {
       htmlParseMs: 0,
       articleExtractionMs: Date.now() - started,
@@ -178,6 +226,7 @@ export function parseNikkeiEmail(html: string, textFallback: string): ParsedNews
       section: section || undefined,
       imageUrl: image?.src,
       imageAlt: image?.alt,
+      publishedAt: extractPublishedAt(raw, baseDate),
     });
   }
 
@@ -192,7 +241,7 @@ export function parseNikkeiEmail(html: string, textFallback: string): ParsedNews
   return result;
 }
 
-function parseText(t: string): ParsedNews[] {
+function parseText(t: string, baseDate?: string): ParsedNews[] {
   const lines = t.split(/\r?\n/).map(clean).filter(Boolean);
   const out: ParsedNews[] = [];
   let section = "";
@@ -213,6 +262,7 @@ function parseText(t: string): ParsedNews[] {
       title: line,
       body: hasSummary ? next : "",
       section: section || undefined,
+      publishedAt: extractPublishedAt([line, next].join(" "), baseDate),
     });
   }
 

@@ -20,7 +20,7 @@ function editionInfo(internalDate: string | undefined, dateHeader: string, conte
 
 function parseNikkeiNews(parsed:any[],mailId:string,sourceIndex:number,publishedAt:string){
   return parsed.map((n:any,i:number)=>({
-    id:`nikkei:${mailId}:${i}`, source:"日経", title:n.title||"無題", url:n.url||"", publishedAt,
+    id:`nikkei:${mailId}:${i}`, source:"日経", title:n.title||"無題", url:n.url||"", publishedAt:n.publishedAt||publishedAt,
     description:n.body||"", content:n.body||"", imageUrl:n.imageUrl,
     category:inferCategory(n.title||"",n.body||""), primaryCategory:inferCategory(n.title||"",n.body||""),
     tags:["日経"], importanceScore:scoreArticle(n.title||"",n.body||"",inferCategory(n.title||"",n.body||"")), index:sourceIndex+i,
@@ -40,7 +40,7 @@ async function processGmailMessage(full:any){
   const publishedAt=full.internalDate ? new Date(Number(full.internalDate)).toISOString() : new Date(dateHeader).toISOString();
   const kind=sender.includes("sokuho-news@mx.nikkei.com")?"速報":edition.kind;
   const parseStarted=Date.now();
-  const parsedEmail=parseNikkeiEmail(html,text);
+  const parsedEmail=parseNikkeiEmail(html,text,full.internalDate ? new Date(Number(full.internalDate)).toISOString() : dateHeader);
   const htmlParseAndExtractionMs=Date.now()-parseStarted;
   const parsedArticles=parseNikkeiNews(parsedEmail,id,0,publishedAt);
   console.log("[GMAIL] MESSAGE",{
