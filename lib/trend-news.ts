@@ -138,6 +138,56 @@ function diversifyTrendArticles(articles:TrendNewsArticle[]){
 }
 function sim(a:string,b:string){const x=norm(a),y=norm(b);if(!x||!y)return 0;if(x.includes(y)||y.includes(x))return 1;const grams=(s:string)=>new Set(Array.from({length:Math.max(0,s.length-1)},(_,i)=>s.slice(i,i+2)));const ax=grams(x),by=grams(y);let n=0;for(const g of ax)if(by.has(g))n++;return n/Math.max(1,ax.size+by.size-n);}
 function topicsOf(articles:TrendNewsArticle[]):NewsTopic[]{const topics:NewsTopic[]=[];for(const a of articles){const t=topics.find(t=>sim(t.title,a.title)>=0.38||a.trendTerms.some(k=>t.articles.some(x=>x.trendTerms.includes(k))));if(t)t.articles.push(a);else topics.push({id:"topic:"+a.id,title:a.title,summary:a.description,publishedAt:a.publishedAt,impactScore:a.impactScore,importanceStars:a.importanceStars,trendBadges:[],heat:0,articles:[a]});}for(const t of topics){const all=t.articles;const g=all.filter(a=>a.googleRank).sort((a,b)=>(a.googleRank||99)-(b.googleRank||99))[0];const y=all.filter(a=>a.yahooRank).sort((a,b)=>(a.yahooRank||99)-(b.yahooRank||99))[0];const relatedBonus=Math.min(3,Math.floor((all.length-1)/2));const baseImpact=Math.max(...all.map(a=>a.impactScore));t.impactScore=Math.min(15,baseImpact+relatedBonus);t.importanceStars=t.impactScore>=13?5:t.impactScore>=9?4:t.impactScore>=5?3:t.impactScore>=2?2:1;t.trendBadges=[];if(g?.googleRank&&g.googleRank<=5)t.trendBadges.push("google");if(y?.yahooRank&&y.yahooRank<=5)t.trendBadges.push("yahoo");const sourceCount=new Set(all.map(a=>a.source).filter(Boolean)).size;if(sourceCount>=3)t.trendBadges.push("coverage");t.heat=Math.min(100,t.impactScore*6+Math.min(40,all.length*8));}return topics.sort((a,b)=>new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());}
+async function fetchNewsData(trends:TrendKeyword[]){
+  const googleTerms=trends.filter(t=>t.googleRank&&t.googleRank<=10).map(t=>({...t,searchTerm:newsSearchTerm(t.term)})).filter(t=>t.searchTerm.length>=2);
+  const yahooTerms=trends.filter(t=>t.yahooRank&&t.yahooRank<=10).map(t=>({...t,searchTerm:newsSearchTerm(t.term)})).filter(t=>t.searchTerm.length>=2&&isMeaningfulYahooTerm(t.searchTerm));
+  const selectedMap=new Map<string,typeof googleTerms[number]>();
+  for(const t of [...googleTerms,...yahooTerms]){const k=norm(t.searchTerm);const prev=selectedMap.get(k);if(!prev)selectedMap.set(k,t);else selectedMap.set(k,{...prev,googleRank:t.googleRank??prev.googleRank,yahooRank:t.yahooRank??prev.yahooRank,sources:uniq([...prev.sources,...t.sources])});}
+  const selected=[...selectedMap.values()].sort((a,b)=>Math.min(a.googleRank??99,a.yahooRank??99)-Math.min(b.googleRank??99,b.yahooRank??99));
+  console.log("[TREND_PIPELINE] GOOGLE_NEWS_START",JSON.stringify({googleTerms:googleTerms.map(t=>({term:t.searchTerm,rank:t.googleRank})),yahooTerms:yahooTerms.map(t=>({term:t.searchTerm,rank:t.yahooRank})),selectedTerms:selected.map(t=>t.searchTerm),queries:selected.length}));
+  const batches=await Promise.all(selected.map(async t=>({term:t,articles:await googleNewsQuery(t.searchTerm.includes(" ") ? '"' + t.searchTerm + '"' : t.searchTerm)})));
+  const raw=batches.flatMap(x=>x.articles.map(article=>({article,term:x.term})));
+  console.log("[TREND_PIPELINE] GOOGLE_NEWS_BATCH_SUMMARY",JSON.stringify({requested:batches.length,succeeded:batches.length,raw:raw.length}));
+  const seen=new Set<string>();const out:TrendNewsArticle[]=[];
+  for(const item of raw){const x=item.article;const url=String(x.link||"");const title=clean(String(x.title||""));if(!url||!title||seen.has(url)||!(url.startsWith("http://")||url.startsWith("https://")))continue;const desc=clean(String(x.description||"")).replace(/<[^>]+>/g," ");const haystack=norm(title+" "+desc);const hit=selected.filter(t=>haystack.includes(norm(t.searchTerm))).slice(0,5);if(!hit.length)continue;seen.add(url);
+    const googleHits=hit.filter(t=>t.googleRank);const yahooHits=hit.filter(t=>t.yahooRank);const g=googleHits.length?Math.min(...googleHits.map(t=>t.googleRank!)):99;const y=yahooHits.length?Math.min(...yahooHits.map(t=>t.yahooRank!)):99;const both=g<99&&y<99;
+    const best=Math.min(g,y);const rankBonus=best<=1?4:best<=3?3:best<=5?2:best<=10?1:0;const impact=Math.min(15,(both?8:3)+rankBonus+Math.min(2,hit.length-1));
+    const stars:1|2|3|4|5=both&&g<=3&&y<=3?5:both&&g<=5&&y<=5?4:(both||best<=3)?3:2;
+    out.push({id:"googlenews:"+url,title,description:desc,url,source:clean(String(x.source||"Google News")),imageUrl:undefined,publishedAt:dateOf(String(x.pubDate||"")),category:category(title+" "+desc),trendTerms:hit.map(t=>t.term),googleRank:g<99?g:undefined,yahooRank:y<99?y:undefined,coverageCount:hit.length,impactScore:impact,importanceStars:stars});
+  }
+  const diversified=diversifyTrendArticles(out);
+  console.log("[TREND_PIPELINE] GOOGLE_NEWS",JSON.stringify({queries:selected.length,raw:raw.length,articles:out.length,displayArticles:diversified.length,googleOnly:out.filter(a=>a.googleRank&&!a.yahooRank).length,yahooOnly:out.filter(a=>a.yahooRank&&!a.googleRank).length,both:out.filter(a=>a.googleRank&&a.yahooRank).length,top:diversified.slice(0,10).map(a=>({title:a.title,googleRank:a.googleRank,yahooRank:a.yahooRank,stars:a.importanceStars,terms:a.trendTerms}))}));
+  return diversified;
+}
+function diversifyTrendArticles(articles:TrendNewsArticle[]){
+  const ranked=[...articles].sort((a,b)=>b.impactScore-a.impactScore||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
+  const topicOf=(a:TrendNewsArticle)=>a.trendTerms.map(norm).filter(Boolean).sort().join("|")||norm(a.title).slice(0,24);
+  const groups=new Map<string,TrendNewsArticle[]>();
+  for(const a of ranked){const key=topicOf(a);const list=groups.get(key)||[];list.push(a);groups.set(key,list);}
+  const selected:TrendNewsArticle[]=[];
+  const usedSources=new Set<string>();
+  const usedCategories=new Set<string>();
+  const topicQueues=[...groups.values()].map(list=>list.slice(0,2));
+  while(topicQueues.some(q=>q.length)){
+    let bestIndex=-1;
+    let bestScore=-Infinity;
+    for(let i=0;i<topicQueues.length;i++){
+      const a=topicQueues[i][0];if(!a)continue;
+      const diversity=(usedCategories.has(a.category)?0:1.5)+(usedSources.has(a.source)?0:0.5);
+      const score=a.impactScore*3+diversity;
+      if(score>bestScore){bestScore=score;bestIndex=i;}
+    }
+    if(bestIndex<0)break;
+    const a=topicQueues[bestIndex].shift()!;
+    selected.push(a);
+    usedSources.add(a.source);usedCategories.add(a.category);
+    if(selected.length>=18)break;
+  }
+  return selected;
+}
+function sim(a:string,b:string){const x=norm(a),y=norm(b);if(!x||!y)return 0;if(x.includes(y)||y.includes(x))return 1;const grams=(s:string)=>new Set(Array.from({length:Math.max(0,s.length-1)},(_,i)=>s.slice(i,i+2)));const ax=grams(x),by=grams(y);let n=0;for(const g of ax)if(by.has(g))n++;return n/Math.max(1,ax.size+by.size-n);}
+function topicsOf(articles:TrendNewsArticle[]):NewsTopic[]{const topics:NewsTopic[]=[];for(const a of articles){const t=topics.find(t=>sim(t.title,a.title)>=0.38||a.trendTerms.some(k=>t.articles.some(x=>x.trendTerms.includes(k))));if(t)t.articles.push(a);else topics.push({id:"topic:"+a.id,title:a.title,summary:a.description,publishedAt:a.publishedAt,impactScore:a.impactScore,importanceStars:a.importanceStars,trendBadges:[],heat:0,articles:[a]});}for(const t of topics){const all=t.articles;const g=all.filter(a=>a.googleRank).sort((a,b)=>(a.googleRank||99)-(b.googleRank||99))[0];const y=all.filter(a=>a.yahooRank).sort((a,b)=>(a.yahooRank||99)-(b.yahooRank||99))[0];const relatedBonus=Math.min(3,Math.floor((all.length-1)/2));const baseImpact=Math.max(...all.map(a=>a.impactScore));t.impactScore=Math.min(15,baseImpact+relatedBonus);t.importanceStars=t.impactScore>=13?5:t.impactScore>=9?4:t.impactScore>=5?3:t.impactScore>=2?2:1;t.trendBadges=[];if(g?.googleRank&&g.googleRank<=5)t.trendBadges.push("google");if(y?.yahooRank&&y.yahooRank<=5)t.trendBadges.push("yahoo");const sourceCount=new Set(all.map(a=>a.source).filter(Boolean)).size;if(sourceCount>=3)t.trendBadges.push("coverage");t.heat=Math.min(100,t.impactScore*6+Math.min(40,all.length*8));}return topics.sort((a,b)=>new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());}
+
 export async function collectTrendNews(){const started=Date.now();const[google,yahoo,x]=await Promise.all([fetchGoogleTrends(),fetchYahooRealtimeTrends(),fetchXTrends()]);const trends=merge(google,yahoo,x);const articles=await fetchNewsData(trends);const topics=topicsOf(articles);const heatByHour:Record<string,{count:number;heat:number}>={};for(const t of topics){const key=new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",hour12:false}).format(new Date(t.publishedAt));heatByHour[key]??={count:0,heat:0};heatByHour[key].count+=t.articles.length;heatByHour[key].heat+=t.heat;}console.log("[TREND_PIPELINE] SUMMARY",JSON.stringify({google:google.length,yahoo:yahoo.length,keywords:trends.length,articles:articles.length,topics:topics.length,durationMs:Date.now()-started}));return{google,yahoo,x,trends,articles,topics,heatByHour};}
 
 
