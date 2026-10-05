@@ -19,10 +19,13 @@ function editionInfo(internalDate: string | undefined, dateHeader: string, conte
 }
 
 async function fetchArticlePublishedAt(rawUrl:string):Promise<string|undefined>{
+  const debug:any={rawUrl,finalUrl:"",status:0,candidates:[],jsonLd:[],selected:""};
   try{
     const response=await fetch(rawUrl,{redirect:"follow",headers:{"User-Agent":"NikkeiNewsReader/1.0","Accept":"text/html,application/xhtml+xml","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"},cache:"no-store"});
-    if(!response.ok)return undefined;
+    debug.status=response.status;
+    if(!response.ok){console.log("[ARTICLE_TIME] FETCH_FAILED",debug);return undefined;}
     const finalUrl=new URL(response.url||rawUrl);
+    debug.finalUrl=finalUrl.toString();
     if(!/^(?:www\\.)?nikkei\\.com$/i.test(finalUrl.hostname))return undefined;
     const html=await response.text();
     const {JSDOM}=await import("jsdom");
@@ -36,13 +39,15 @@ async function fetchArticlePublishedAt(rawUrl:string):Promise<string|undefined>{
       doc.querySelector('[itemprop="datePublished"]')?.getAttribute("datetime"),
       doc.querySelector('[itemprop="datePublished"]')?.textContent,
     ].filter(Boolean) as string[];
+    debug.candidates=candidates;
+    console.log("[ARTICLE_TIME] HTML_FIELDS",debug);
     for(const value of candidates){
       const d=new Date(value);
-      if(!Number.isNaN(d.getTime()))return d.toISOString();
+      if(!Number.isNaN(d.getTime())){debug.selected=value;console.log("[ARTICLE_TIME] SELECTED",debug);return d.toISOString();}
       const m=value.match(/(20\\d{2})[年\\/.-](\\d{1,2})[月\\/.-](\\d{1,2})日?[^\\d]{0,20}(\\d{1,2}):(\\d{2})/);
       if(m){
         const d2=new Date(Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3]),Number(m[4])-9,Number(m[5])));
-        if(!Number.isNaN(d2.getTime()))return d2.toISOString();
+        if(!Number.isNaN(d2.getTime())){debug.selected=value;console.log("[ARTICLE_TIME] SELECTED",debug);return d2.toISOString();}
       }
     }
     const ldScripts=Array.from(doc.querySelectorAll('script[type="application/ld+json"]'));
@@ -56,13 +61,15 @@ async function fetchArticlePublishedAt(rawUrl:string):Promise<string|undefined>{
           if(!/NewsArticle|Article/i.test(type))continue;
           for(const key of ["datePublished","dateCreated"]){
             const value=typeof item[key]==="string"?item[key]:"";
+            if(value)debug.jsonLd.push({key,value});
             const d=new Date(value);
-            if(value&&!Number.isNaN(d.getTime()))return d.toISOString();
+            if(value&&!Number.isNaN(d.getTime())){debug.selected=value;console.log("[ARTICLE_TIME] SELECTED_JSONLD",debug);return d.toISOString();}
           }
         }
       }catch{}
     }
-  }catch{}
+  }catch(error:any){debug.error=error?.message||String(error);console.log("[ARTICLE_TIME] ERROR",debug);}
+  console.log("[ARTICLE_TIME] NOT_FOUND",debug);
   return undefined;
 }
 
