@@ -10,27 +10,101 @@ const norm=(v:string)=>clean(v).toLowerCase().replace(/[^ぁ-んァ-ヶ一-龠a-
 const uniq=<T,>(a:T[])=>[...new Set(a)];
 const dateOf=(v:string)=>{const d=new Date(v);return Number.isNaN(d.getTime())?new Date().toISOString():d.toISOString();};
 async function getText(url:string,timeout=8000){const c=new AbortController();const timer=setTimeout(()=>c.abort(),timeout);try{const r=await fetch(url,{signal:c.signal,cache:"no-store",headers:{"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)","Accept":"text/html,application/xml,text/xml,*/*","Accept-Language":"ja-JP,ja;q=0.9"}});if(!r.ok)throw new Error("HTTP "+r.status);return await r.text();}finally{clearTimeout(timer);}}
-const X_JAPAN_WOEID=23424856;
+const TWITTREND_JAPAN_URL="https://twittrend.jp/trend/";
+const TWITTREND_CACHE_TTL=10*60*1000;
 let xTrendCache:{at:number;data:TrendKeyword[]}|null=null;
-export async function fetchXTrends():Promise<TrendKeyword[]>{
-  const enabled=process.env.ENABLE_X_TRENDS==="true";
-  const token=process.env.X_API_BEARER_TOKEN||process.env.X_BEARER_TOKEN||"";
-  if(!enabled||!token){console.log("x_trend_fetch_success",JSON.stringify({enabled:false,count:0,region:"Japan",apiUsed:false,reason:enabled?"missing_token":"disabled"}));return[];}
-  const now=Date.now();
-  if(xTrendCache&&now-xTrendCache.at<300000){console.log("x_trend_fetch_success",JSON.stringify({count:xTrendCache.data.length,region:"Japan",observedAt:new Date(xTrendCache.at).toISOString(),apiUsed:false,cached:true}));return xTrendCache.data;}
-  const observedAt=new Date().toISOString();
-  console.log("x_trend_fetch_start",JSON.stringify({region:"Japan",woeid:X_JAPAN_WOEID,observedAt,apiUsed:true,maxTrends:20}));
-  try{
-    const url="https://api.x.com/2/trends/by/woeid/"+X_JAPAN_WOEID+"?max_trends=20&trend.fields=trend_name,tweet_count";
-    const r=await fetch(url,{cache:"no-store",headers:{Authorization:"Bearer "+token,Accept:"application/json"}});
-    const body=await r.json().catch(()=>({}));
-    if(!r.ok||!Array.isArray(body?.data))throw new Error(body?.errors?.[0]?.detail||"HTTP "+r.status);
-    const out:TrendKeyword[]=body.data.map((x:any,i:number)=>{const term=clean(String(x?.trend_name||""));const postCount=Number.isFinite(Number(x?.tweet_count))?Number(x.tweet_count):undefined;return{term,xRank:i+1,sources:["X"],observedAt,postCount,sourceUrl:"https://x.com/search?q="+encodeURIComponent(term)+"&f=live"}}).filter((x:TrendKeyword)=>x.term.length>=2);
-    xTrendCache={at:now,data:out};
-    console.log("x_trend_fetch_success",JSON.stringify({count:out.length,region:"Japan",observedAt,top:out.slice(0,10).map(x=>({keyword:x.term,rank:x.xRank,postCount:x.postCount})),apiUsed:true,cached:false}));
-    return out;
-  }catch(e){console.warn("x_trend_fetch_error",JSON.stringify({region:"Japan",observedAt,apiUsed:true,error:e instanceof Error?e.message:String(e)}));return[];}
+
+function twittrendObservedAt(updateText:string,now=new Date()){
+  const m=updateText.match(/更新\\s*[:：]\\s*(\\d{1,2})時(\\d{2})分/);
+  if(!m)return null;
+  const hour=Number(m[1]),minute=Number(m[2]);
+  if(hour>23||minute>59)return null;
+  const jstParts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(now);
+  const year=Number(jstParts.find(p=>p.type==="year")?.value);
+  const month=Number(jstParts.find(p=>p.type==="month")?.value);
+  const day=Number(jstParts.find(p=>p.type==="day")?.value);
+  if(!year||!month||!day)return null;
+  const candidates=[-1,0,1].map(offset=>{
+    const utc=Date.UTC(year,month-1,day+offset,hour-9,minute,0);
+    return new Date(utc);
+  });
+  candidates.sort((a,b)=>Math.abs(a.getTime()-now.getTime())-Math.abs(b.getTime()-now.getTime()));
+  return candidates[0]?.toISOString()||null;
 }
+
+function parseTwittrendJapan(html:string,now=new Date()):TrendKeyword[]{
+  const doc=new JSDOM(html).window.document;
+  const headings=Array.from(doc.querySelectorAll("h1,h2,h3,h4,h5,h6")).filter(h=>clean(h.textContent||"")==="日本");
+  const heading=headings[0];
+  if(!heading)throw new Error("日本セクションが見つかりません");
+  let container:Element|null=heading.parentElement;
+  let best:Element|null=null;
+  for(let depth=0;container&&depth<6;depth++,container=container.parentElement){
+    const text=clean(container.textContent||"");
+    const ranked=Array.from(container.querySelectorAll("li")).filter(li=>/^\\s*\\d+\\s*\\./.test(clean(li.textContent||"")));
+    if(/更新\\s*[:：]\\s*\\d{1,2}時\\d{2}分/.test(text)&&ranked.length>=10){
+      best=container;
+      if(ranked.length>=40)break;
+    }
+  }
+  if(!best)throw new Error("日本セクションのトレンド一覧が見つかりません");
+  const updateMatch=clean(best.textContent||"").match(/更新\\s*[:：]\\s*\\d{1,2}時\\d{2}分/);
+  const observedAt=updateMatch?twittrendObservedAt(updateMatch[0],now):null;
+  if(!observedAt)throw new Error("日本セクションの更新時刻を解析できません");
+  const rows=Array.from(best.querySelectorAll("li"));
+  const seen=new Set<number>();
+  const out:TrendKeyword[]=[];
+  for(const li of rows){
+    const text=clean(li.textContent||"");
+    const rankMatch=text.match(/^\\s*(\\d+)\\s*\\./);
+    if(!rankMatch)continue;
+    const rank=Number(rankMatch[1]);
+    if(rank<1||rank>50||seen.has(rank))continue;
+    const link=li.querySelector("a");
+    const keyword=clean(link?.textContent||text.replace(/^\\s*\\d+\\s*\\.\\s*/,""));
+    if(!keyword)continue;
+    seen.add(rank);
+    out.push({term:keyword,xRank:rank,sources:["X"],observedAt,sourceUrl:TWITTREND_JAPAN_URL});
+  }
+  out.sort((a,b)=>(a.xRank||99)-(b.xRank||99));
+  if(out.length<10)throw new Error("日本トレンドの取得件数が少なすぎます: "+out.length);
+  return out;
+}
+
+export async function fetchXTrends():Promise<TrendKeyword[]>{
+  const now=Date.now();
+  if(xTrendCache&&now-xTrendCache.at<TWITTREND_CACHE_TTL){
+    const observedAt=xTrendCache.data[0]?.observedAt;
+    console.log("x_trend_fetch_success",JSON.stringify({source:"twittrend",region:"japan",count:xTrendCache.data.length,observedAt,topTrends:xTrendCache.data.slice(0,3).map(x=>x.term),cached:true}));
+    return xTrendCache.data;
+  }
+  const startedAt=new Date().toISOString();
+  console.log("x_trend_fetch_start",JSON.stringify({source:"twittrend",region:"japan",url:TWITTREND_JAPAN_URL,startedAt,cached:false}));
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),8000);
+  try{
+    const response=await fetch(TWITTREND_JAPAN_URL,{
+      signal:controller.signal,
+      cache:"no-store",
+      headers:{
+        "User-Agent":"nikkeinewsletter-personal/1.0",
+        "Accept":"text/html,application/xhtml+xml",
+      },
+    });
+    if(!response.ok)throw new Error("HTTP "+response.status);
+    const html=await response.text();
+    const data=parseTwittrendJapan(html,new Date());
+    xTrendCache={at:Date.now(),data};
+    console.log("x_trend_fetch_success",JSON.stringify({source:"twittrend",region:"japan",count:data.length,observedAt:data[0]?.observedAt,topTrends:data.slice(0,3).map(x=>x.term),cached:false}));
+    return data;
+  }catch(e){
+    console.warn("x_trend_fetch_error",JSON.stringify({source:"twittrend",region:"japan",url:TWITTREND_JAPAN_URL,status:e instanceof Error&&/^HTTP /.test(e.message)?e.message.slice(5):undefined,error:e instanceof Error?e.message:String(e),startedAt}));
+    return [];
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
 export async function fetchGoogleTrends():Promise<TrendKeyword[]>{try{const observedAt=new Date().toISOString();const doc=new JSDOM(await getText("https://trends.google.com/trending/rss?geo=JP")).window.document;const out:TrendKeyword[]=[];for(const item of Array.from(doc.querySelectorAll("item"))){const term=clean(item.querySelector("title")?.textContent||"");if(term.length<2)continue;const rank=out.length+1;const pub=item.querySelector("pubDate")?.textContent||"";const approx=item.querySelector("approx_traffic,ht\\:approx_traffic")?.textContent||"";const started=pub?new Date(pub):new Date(observedAt);const traffic=Number((approx.match(/[0-9,.]+/)||[])[0]?.replace(/,/g,"")||0);out.push({term,googleRank:rank,sources:["Google Trends"],observedAt:Number.isNaN(started.getTime())?observedAt:started.toISOString(),searchIncrease:traffic||undefined} as TrendKeyword)}const result=uniq(out.map(x=>norm(x.term))).map(k=>out.find(x=>norm(x.term)===k)!).slice(0,30);console.log("[TREND_PIPELINE] GOOGLE",JSON.stringify({count:result.length,top:result.slice(0,10)}));return result}catch(e){console.warn("[TREND_PIPELINE] GOOGLE_FAIL",e instanceof Error?e.message:String(e));return[];}}
 function yahooTerm(raw:string){let s=clean(raw).replace(/^\d+\s*/,"").replace(/^[0-9]+位/,"").split(/急上昇|https?:\/\//i)[0].split(/[／/]/)[0].trim();const hash=s.match(/#([^\s#]+)/);if(hash)return clean(hash[1]).replace(/[！!、。,:：]+$/,"").slice(0,24);s=s.split(/(?:返信数|リポスト数|いいね数|こいつ|誰よりも|これは|なんだこれ|繰り返します|本日)/i)[0];s=s.split(/[！!。！？]/)[0];s=s.replace(/^[^\p{L}\p{N}ぁ-んァ-ヶ一-龠]+/u,"");return clean(s).slice(0,24);}
 function isMeaningfulYahooTerm(term:string){const s=clean(term);if(s.length<2||s.length>24)return false;if(/[\u{1F300}-\u{1FAFF}]/u.test(s))return false;if(/(?:えっち|セックス|裸|ポルノ|アダルト|殺す|死ね)/i.test(s))return false;const letters=(s.match(/[ぁ-んァ-ヶ一-龠A-Za-z0-9]/g)||[]).length;return letters>=3;}
