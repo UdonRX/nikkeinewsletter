@@ -45,7 +45,8 @@ export async function GET(req:NextRequest){
     const structured=jsonLdArticle(doc);
     const ogTitle=doc.querySelector('meta[property="og:title"]')?.getAttribute("content")||"";
     const ogImage=doc.querySelector('meta[property="og:image"]')?.getAttribute("content")||"";
-    const title=structured?.headline||ogTitle||doc.querySelector("h1")?.textContent?.trim()||fallbackTitle;\n    const articleImage=doc.querySelector("article img[src],main img[src]")?.getAttribute("src")||"";
+    const title=structured?.headline||ogTitle||doc.querySelector("h1")?.textContent?.trim()||fallbackTitle;
+    const articleImage=doc.querySelector("article img[src],main img[src]")?.getAttribute("src")||"";
     const imageRaw=typeof structured?.image==="string"?structured.image:(structured?.image as any)?.url||ogImage||articleImage;
     const imageUrl=imageRaw?new URL(imageRaw,finalUrl).toString():"";
     if(structured?.body){const t=trimPaywall(structured.body);return NextResponse.json({title,imageUrl,contentHtml:textToHtml(t.text),url:finalUrl.toString(),available:Boolean(t.text),paywalled:t.paywalled,source:"public_article"});}

@@ -34,13 +34,17 @@ export function NewsRow({
   newsIndex:number;
   openReader:(email:Email,newsIndex:number)=>void;
 }){
-  const [expanded,setExpanded]=useState(false);\n  const [article,setArticle]=useState<{imageUrl?:string;contentHtml?:string;source?:string}|null>(null);\n  const [articleLoading,setArticleLoading]=useState(false);
+  const [expanded,setExpanded]=useState(false);
+  const [article,setArticle]=useState<{imageUrl?:string;contentHtml?:string;source?:string}|null>(null);
+  const [articleLoading,setArticleLoading]=useState(false);
   const n=importanceValue(news);
   const title=cleanNewsTitle(news.title);
   const publishedAt=news.publishedAt||email.internalDate;
   const dateLabel=useMemo(()=>dateTimeOf(publishedAt),[publishedAt]);
   const source=news.source||email.from||"ニュース";
-  const summary=tinySummary(article?.contentHtml ? article.contentHtml.replace(/<[^>]+>/g," ") : news.body,news.title);\n\n  async function toggleExpanded(){\n    const next=!expanded;\n    setExpanded(next);\n    if(!next || article || !news.url || articleLoading)return;\n    setArticleLoading(true);\n    try{\n      const params=new URLSearchParams({url:news.url,title:news.title,body:news.body||""});\n      const response=await fetch("/api/article?"+params.toString(),{cache:"no-store"});\n      const data=await response.json().catch(()=>null);\n      if(response.ok&&data)setArticle(data);\n    }catch{}finally{setArticleLoading(false);}\n  }
+  const summary=tinySummary(article?.contentHtml ? article.contentHtml.replace(/<[^>]+>/g," ") : news.body,news.title);
+
+  async function toggleExpanded(){\n    const next=!expanded;\n    setExpanded(next);\n    if(!next || article || !news.url || articleLoading)return;\n    setArticleLoading(true);\n    try{\n      const params=new URLSearchParams({url:news.url,title:news.title,body:news.body||""});\n      const response=await fetch("/api/article?"+params.toString(),{cache:"no-store"});\n      const data=await response.json().catch(()=>null);\n      if(response.ok&&data)setArticle(data);\n    }catch{}finally{setArticleLoading(false);}\n  }
 
   return <article className={"timeline-item importance-"+n+(expanded?" is-expanded":"")}>
     <div className="timeline-node" aria-hidden="true"><span/></div>
