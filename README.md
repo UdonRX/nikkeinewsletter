@@ -79,3 +79,26 @@ Redirect URI:
 
 添付サンプルでは、先頭の「ホンダが米国にHV新工場…」に続いて本文があり、その後の「習氏に3つの対米カード…」「メタ、眼鏡に独自AI…」などは見出しだけが連続している構造が確認できる。\n
 そのため、**本文が存在しないニュースに別ニュースの文章を本文として誤結合しない**ことを優先する。
+
+
+## 2026-10 Timeline mode
+
+ホーム画面は「日経メールを読む一覧」から、記事・検索トレンド・出来事を同じ時間軸で見るタイムラインへ拡張している。
+
+データフロー:
+
+`Google Trends / Yahoo!リアルタイム検索 / NewsData.io / 既存RSS / 日経Gmail`
+→ `TrendSignal`
+→ 正規化・重複排除
+→ `topic`
+→ 複数記事・複数情報源のクラスタリング
+→ `event`
+→ `article / topic / event` を時系列統合
+
+NewsData.ioを有効にする場合は、Vercel/実行環境に次のサーバー専用環境変数を設定する。
+
+- `NEWSDATA_API_KEY`（または `NEWS_DATA_API_KEY`）
+
+未設定の場合もGoogle Trends・Yahoo!リアルタイム検索・既存RSS・日経Gmailだけでタイムライン生成を継続する。
+
+ログには、取得件数、重複排除後件数、topic/event/article件数、Eventの関連記事数、trendScore、importanceScore、各取得元のエラーを出力する。
