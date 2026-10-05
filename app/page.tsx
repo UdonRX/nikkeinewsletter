@@ -1,7 +1,7 @@
 "use client";
 import {useEffect,useMemo,useState} from "react";import type {Email,ReaderData,TimelineItem} from "@/lib/news/types";import {NewsRow} from "@/app/components/news/NewsRow";
 const KEY="nikkei-news-gmail-cache-v2";
-function getCache(){try{const p=JSON.parse(localStorage.getItem(KEY)||"");return{historyId:typeof p?.historyId==="string"?p.historyId:"",emails:Array.isArray(p?.emails)?p.emails:[] as Email[]}}catch{return{historyId:"",emails:[] as Email[]}}
+function getCache(){try{const p=JSON.parse(localStorage.getItem(KEY)||"");return{historyId:typeof p?.historyId==="string"?p.historyId:"",emails:Array.isArray(p?.emails)?p.emails:[] as Email[]}}catch{return{historyId:"",emails:[] as Email[]}}}
 function saveCache(id:string,e:Email[]){try{localStorage.setItem(KEY,JSON.stringify({historyId:id,emails:e}))}catch{}}
 function merge(a:Email[],b:Email[],deleted:string[],full:boolean){if(full)return b;const d=new Set(deleted),m=new Map<string,Email>();for(const e of a)if(!d.has(e.id))m.set(e.id,e);for(const e of b)if(!d.has(e.id))m.set(e.id,e);return[...m.values()]}
 function time(v?:string){if(!v)return"--:--";const d=new Date(v);return Number.isNaN(d.getTime())?"--:--":new Intl.DateTimeFormat("ja-JP",{timeZone:"Asia/Tokyo",hour:"2-digit",minute:"2-digit",hour12:false}).format(d)}
