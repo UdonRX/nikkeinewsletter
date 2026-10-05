@@ -144,6 +144,19 @@ function extractPublishedAt(text: string, baseDate?: string) {
     if (iso) return iso;
   }
 
+  const labeled = normalized.match(/(?:公開|掲載|配信|更新|投稿|発信)[^\\d]{0,12}(20\\d{2}[年\\/-])?(\\d{1,2})[月\\/-](\\d{1,2})日?[^\\d]{0,12}(\\d{1,2}):(\\d{2})/);
+  if (labeled) {
+    const year = labeled[1] ? Number(labeled[1].replace(/[^0-9]/g, "")) : base.year;
+    const iso = toIsoTokyo(year, Number(labeled[2]), Number(labeled[3]), Number(labeled[4]), Number(labeled[5]));
+    if (iso) return iso;
+  }
+
+  const labeledTime = normalized.match(/(?:公開|掲載|配信|更新|投稿|発信)[^\\d]{0,20}(\\d{1,2}):(\\d{2})/);
+  if (labeledTime) {
+    const iso = toIsoTokyo(base.year, base.month, base.day, Number(labeledTime[1]), Number(labeledTime[2]));
+    if (iso) return iso;
+  }
+
   const fullDatePatterns = [
     /(20\d{2})[年\/.-](\d{1,2})[月\/.-](\d{1,2})日?[^\d]{0,16}(\d{1,2}):(\d{2})/,
     /(\d{1,2})月(\d{1,2})日[^\d]{0,16}(\d{1,2}):(\d{2})/,
