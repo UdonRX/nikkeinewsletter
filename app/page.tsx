@@ -500,7 +500,15 @@ export default function Home() {
 
   const refresh = useCallback(async () => {
     try {
-      const r = await fetch("/api/emails", { cache: "no-store", headers: { "x-news-debug-id": crypto.randomUUID() } });
+      const refreshToken = Date.now().toString();
+      const r = await fetch(`/api/emails?_refresh=${refreshToken}`, {
+        cache: "no-store",
+        headers: {
+          "cache-control": "no-cache, no-store, max-age=0",
+          pragma: "no-cache",
+          "x-news-debug-id": crypto.randomUUID(),
+        },
+      });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "universe_error");
       const trendPayload = Array.isArray(d?.trends) ? d.trends.length : 0;
@@ -522,17 +530,26 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const cached = readCachedUniverse();
+    // iOS Safari/PWA can keep a previous JS/API response alive longer than expected.
+    // Always fetch a fresh universe when the app becomes visible/opened.
     const old = readHistory();
-    if (cached) {
-      setUniverse(cached);
-      setLoading(false);
-      console.info("[TREND_UNIVERSE] cache_loaded", { trends: cached.trends.length, clusters: cached.clusters.length, snapshots: old.length });
-    }
     setHistory(old);
-    refresh();
+    setLoading(true);
+    void refresh();
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        setLoading(true);
+        void refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     const timer = window.setInterval(refresh, 30 * 60 * 1000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [refresh]);
 
   const visibleUniverse = useMemo(() => {
