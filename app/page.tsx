@@ -833,7 +833,6 @@ export default function Home() {
             const inCluster = visibleUniverse?.clusters.some(c => c.trendIds.includes(t.id));
             if (inCluster && viewMode === "universe") return null;
             const active = searchMatch?.id === t.id;
-            const showLabel = t.size > 14 || active || viewMode !== "universe";
             return (
               <button
                 key={t.id}
@@ -849,7 +848,6 @@ export default function Home() {
                 aria-label={t.keyword}
               >
                 <span className="star-core" />
-                {showLabel && <span className="star-label">{t.keyword}</span>}
               </button>
             );
           })}
