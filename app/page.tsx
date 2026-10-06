@@ -306,6 +306,36 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
 
   const laidOut = layoutTrends(raw);
 
+
+
+  const clusters: Cluster[] = [];
+  const used = new Set<string>();
+  for (const trend of laidOut) {
+    if (used.has(trend.id)) continue;
+    const members = laidOut.filter(other => {
+      if (used.has(other.id)) return false;
+      const distance = Math.hypot(trend.x - other.x, trend.y - other.y);
+      const semantic = Math.max(similarity(trend.keyword, other.keyword), trend.relatedKeywords.some(k => similarity(k, other.keyword) > 0.35) ? 0.7 : 0);
+      const categoryClose = trend.category === other.category ? 1 : 0;
+      return distance < 0.25 && semantic >= 0.34 && categoryClose >= 0.5;
+    });
+    if (members.length < 2) continue;
+    members.forEach(m => used.add(m.id));
+    const x = clamp(0.04 + (members.reduce((n, m) => n + m.x, 0) / members.length - 0.04) * 1.04, 0.04, 0.96);
+    const y = clamp(0.05 + (members.reduce((n, m) => n + m.y, 0) / members.length - 0.05) * 0.94, 0.05, 0.95);
+    const spread = members.reduce((n, m) => n + m.spreadScore, 0) / members.length;
+    clusters.push({
+      id: "cluster:" + norm(trend.keyword),
+      representativeKeyword: members.slice().sort((a, b) => b.size - a.size)[0].keyword,
+      trendIds: members.map(m => m.id),
+      x,
+      y,
+      size: 28 + members.length * 9 + spread * 35,
+      category: members[0].category,
+      relatedness: Math.min(1, members.length / 8),
+    });
+  }
+
   // Send the complete layout diagnostics to the server so they appear in Vercel logs.
   // This is intentionally separate from the normal timeline API summary log.
   const positionDiagnostics = laidOut.map(t => {
@@ -367,34 +397,6 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
     }),
   }).catch(() => {});
 
-
-  const clusters: Cluster[] = [];
-  const used = new Set<string>();
-  for (const trend of laidOut) {
-    if (used.has(trend.id)) continue;
-    const members = laidOut.filter(other => {
-      if (used.has(other.id)) return false;
-      const distance = Math.hypot(trend.x - other.x, trend.y - other.y);
-      const semantic = Math.max(similarity(trend.keyword, other.keyword), trend.relatedKeywords.some(k => similarity(k, other.keyword) > 0.35) ? 0.7 : 0);
-      const categoryClose = trend.category === other.category ? 1 : 0;
-      return distance < 0.25 && semantic >= 0.34 && categoryClose >= 0.5;
-    });
-    if (members.length < 2) continue;
-    members.forEach(m => used.add(m.id));
-    const x = clamp(0.04 + (members.reduce((n, m) => n + m.x, 0) / members.length - 0.04) * 1.04, 0.04, 0.96);
-    const y = clamp(0.05 + (members.reduce((n, m) => n + m.y, 0) / members.length - 0.05) * 0.94, 0.05, 0.95);
-    const spread = members.reduce((n, m) => n + m.spreadScore, 0) / members.length;
-    clusters.push({
-      id: "cluster:" + norm(trend.keyword),
-      representativeKeyword: members.slice().sort((a, b) => b.size - a.size)[0].keyword,
-      trendIds: members.map(m => m.id),
-      x,
-      y,
-      size: 28 + members.length * 9 + spread * 35,
-      category: members[0].category,
-      relatedness: Math.min(1, members.length / 8),
-    });
-  }
 
   const dust = laidOut
     .filter(t => t.spreadScore < 0.42)
