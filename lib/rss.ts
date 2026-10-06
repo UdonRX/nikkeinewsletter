@@ -253,6 +253,7 @@ async function fetchFeed(config:FeedConfig){
     const latestArticles=articles.slice().sort((a,b)=>new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
     const latest=latestArticles[0];
     const oldest=latestArticles[latestArticles.length-1];
+    
     return articles;
   }catch(error){
     if(error instanceof Error && error.name==="AbortError"){
@@ -281,8 +282,10 @@ export async function fetchGoogleTrendTerms(){
     if(!r.ok)throw new Error("HTTP "+r.status);
     const doc=new JSDOM(xml).window.document;
     const terms=[...new Set(Array.from(doc.querySelectorAll("item > title, entry > title")).map(el=>cleanText(el.textContent||"")).filter(v=>v.length>=2))];
+    
     return terms;
   }catch(error){
+    
     return [];
   }finally{clearTimeout(timer);}
 }
@@ -291,6 +294,7 @@ async function fetchGoogleNewsTrendFeeds(terms:string[]){
   const configs:FeedConfig[]=selected.map(term=>({source:"Googleニュース",url:`https://news.google.com/rss/search?hl=ja&gl=JP&ceid=JP:ja&q=${encodeURIComponent(term)}`,tags:["Google Trends"]}));
   const results=await Promise.allSettled(configs.map(fetchFeed));
   const articles=results.flatMap(r=>r.status==="fulfilled"?r.value:[]);
+  
   return articles;
 }
 function trendBoost(article:NewsArticle,terms:string[]){
@@ -348,6 +352,7 @@ export function applyImportanceStars(articles:NewsArticle[],terms:string[]){
     };
   });
   const trendMatchedCount=scored.filter(a=>(a.trendScore||0)>0).length;
+  
   return scored;
 }
 function selectAllRssArticles(articles:NewsArticle[],terms:string[]){

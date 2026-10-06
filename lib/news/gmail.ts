@@ -40,6 +40,7 @@ async function fetchArticlePublishedAt(rawUrl:string):Promise<string|undefined>{
       doc.querySelector('[itemprop="datePublished"]')?.textContent,
     ].filter(Boolean) as string[];
     debug.candidates=candidates;
+    
     for(const value of candidates){
       const d=new Date(value);
       if(!Number.isNaN(d.getTime())){debug.selected=value;return d.toISOString();}
@@ -68,6 +69,7 @@ async function fetchArticlePublishedAt(rawUrl:string):Promise<string|undefined>{
       }catch{}
     }
   }catch(error:any){debug.error=error?.message||String(error);}
+  
   return undefined;
 }
 
@@ -98,6 +100,7 @@ async function processGmailMessage(full:any){
   const resolved=await Promise.all(parsedEmail.map(async(n:any)=>({n,publishedAt:n.url?await fetchArticlePublishedAt(n.url):undefined})));
   for(const item of resolved){if(item.publishedAt)item.n.publishedAt=item.publishedAt;}
   const parsedArticles=parseNikkeiNews(parsedEmail,id,0,publishedAt);
+  
   return {
     email:{id:"nikkei:"+id,threadId:full.threadId,from,kind,subject:header(full,"Subject"),receivedAt:dateHeader,internalDate:full.internalDate||"",issueDate:edition.issueDate,snippet:full.snippet||"",newsCount:parsedArticles.length,news:parsedArticles},
     articles:parsedArticles
@@ -105,6 +108,7 @@ async function processGmailMessage(full:any){
 }
 
 async function getNikkeiNews(accessToken:string, historyId:string|null){
+  
   const started=Date.now();
   let fullSync=!historyId;
   let addedIds:string[]=[];
@@ -118,6 +122,7 @@ async function getNikkeiNews(accessToken:string, historyId:string|null){
       deletedIds=changes.deletedIds;
       nextHistoryId=changes.historyId||historyId;
     } catch(e:any) {
+      
       fullSync=true;
     }
   }
@@ -139,6 +144,7 @@ async function getNikkeiNews(accessToken:string, historyId:string|null){
     emails.push(result.email); articles.push(...result.articles);
   }
 
+  
   return {emails,articles,historyId:nextHistoryId,deletedIds,fullSync};
 }
 

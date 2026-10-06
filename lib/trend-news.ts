@@ -75,9 +75,11 @@ export async function fetchXTrends():Promise<TrendKeyword[]>{
   const now=Date.now();
   if(xTrendCache&&now-xTrendCache.at<TWITTREND_CACHE_TTL){
     const observedAt=xTrendCache.data[0]?.observedAt;
+    
     return xTrendCache.data;
   }
   const startedAt=new Date().toISOString();
+  
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),8000);
   try{
@@ -93,8 +95,10 @@ export async function fetchXTrends():Promise<TrendKeyword[]>{
     const html=await response.text();
     const data=parseTwittrendJapan(html,new Date());
     xTrendCache={at:Date.now(),data};
+    
     return data;
   }catch(e){
+    
     return [];
   }finally{
     clearTimeout(timer);
@@ -155,7 +159,8 @@ async function fetchNewsData(trends:TrendKeyword[]){
     out.push({id:"googlenews:"+url,title,description:desc,url,source:clean(String(x.source||"Google News")),imageUrl:undefined,publishedAt:dateOf(String(x.pubDate||"")),category:category(title+" "+desc),trendTerms:hit.map(t=>t.term),googleRank:g<99?g:undefined,yahooRank:y<99?y:undefined,coverageCount:hit.length,impactScore:impact,importanceStars:stars});
   }
   const diversified=diversifyTrendArticles(out);
-  return diversified;
+  
+    return diversified;
 }
 
 
@@ -184,7 +189,9 @@ async function fetchNewsDataTimeline(terms:TrendKeyword[]){
     const r=await fetch("https://newsdata.io/api/1/latest?"+q,{cache:"no-store"});const j=await r.json().catch(()=>({}));
     if(!r.ok||j?.status==="error")throw new Error(j?.results?.message||"HTTP "+r.status);
     if(Array.isArray(j?.results))rows.push(...j.results);ok++;
-  }catch(e){if(!title||!x.link||seen.has(x.article_id||x.link))continue;seen.add(x.article_id||x.link);articles.push({id:"newsdata:"+String(x.article_id||articles.length),title,summary:clean(x.description||x.content||""),description:clean(x.description||x.content||""),url:x.link,source:clean(x.source_name||"NewsData.io"),category:category(title+" "+(x.description||"")),publishedAt:dateOf(x.pubDate||""),imageUrl:x.image_url,keywords:Array.isArray(x.keywords)?x.keywords.slice(0,8):[]})}
+  }catch(e){}}
+  const seen=new Set<string>(),articles:TimelineArticle[]=[];
+  for(const x of rows){const title=clean(x.title||"");if(!title||!x.link||seen.has(x.article_id||x.link))continue;seen.add(x.article_id||x.link);articles.push({id:"newsdata:"+String(x.article_id||articles.length),title,summary:clean(x.description||x.content||""),description:clean(x.description||x.content||""),url:x.link,source:clean(x.source_name||"NewsData.io"),category:category(title+" "+(x.description||"")),publishedAt:dateOf(x.pubDate||""),imageUrl:x.image_url,keywords:Array.isArray(x.keywords)?x.keywords.slice(0,8):[]})}
   const signals=selected.filter(t=>articles.some(a=>sim(a.title,t.term)>=.5)).map(t=>({...t,sources:uniq([...(t.sources||[]),"NewsData.io"])}));
   
   return{articles,signals};
@@ -212,5 +219,6 @@ export async function collectTimelineData(nikkeiArticles:TimelineArticle[]=[]){
  const eventArticleIds=new Set(events.flatMap(e=>(e.relatedArticles||[]).map(a=>a.id)));
  const articleItems=articles.filter(a=>!eventArticleIds.has(a.id)).map(a=>({id:a.id,type:"article" as const,title:a.title,summary:a.summary,category:a.category,publishedAt:a.publishedAt,detectedAt:a.publishedAt,updatedAt:a.updatedAt,trendScore:a.trendScore||0,importanceScore:a.importanceScore||0,source:a.source,sourceUrl:a.url,imageUrl:a.imageUrl,keywords:a.keywords,relatedArticles:[a]}));
  const timeline=[...articleItems,...topics,...events].sort((a,b)=>new Date(b.detectedAt||b.publishedAt||0).getTime()-new Date(a.detectedAt||a.publishedAt||0).getTime());
+ 
  return{google:base.google,yahoo:base.yahoo,newsdata:nd.signals,signals:terms,articles,timeline};
 }
