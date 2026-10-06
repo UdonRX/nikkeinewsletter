@@ -76,6 +76,55 @@ const similarity = (a: string, b: string) => {
   return hit / Math.max(1, ax.size + by.size - hit);
 };
 
+function spreadApart(trends: Trend[]) {
+  const points = trends.map(t => ({ ...t }));
+  const minX = 0.045, maxX = 0.955, minY = 0.095, maxY = 0.895;
+
+  for (let iteration = 0; iteration < 24; iteration++) {
+    for (let i = 0; i < points.length; i++) {
+      for (let j = i + 1; j < points.length; j++) {
+        const a = points[i], b = points[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let distance = Math.hypot(dx, dy);
+
+        if (distance < 0.0001) {
+          let seed = 0;
+          for (const ch of a.id + b.id) seed = (seed * 31 + ch.charCodeAt(0)) % 100000;
+          const angle = (seed / 100000) * Math.PI * 2;
+          dx = Math.cos(angle) * 0.001;
+          dy = Math.sin(angle) * 0.001;
+          distance = 0.001;
+        }
+
+        const minDistance = 0.034 + Math.min(0.014, (a.size + b.size) / 2200);
+        if (distance >= minDistance) continue;
+
+        const push = (minDistance - distance) * 0.52;
+        const nx = dx / distance, ny = dy / distance;
+        const wa = 0.72 + a.momentumScore * 0.28;
+        const wb = 0.72 + b.momentumScore * 0.28;
+        const total = wa + wb;
+
+        a.x -= nx * push * (wb / total);
+        a.y -= ny * push * (wb / total);
+        b.x += nx * push * (wa / total);
+        b.y += ny * push * (wa / total);
+      }
+    }
+
+    // Keep the original data-driven position as a soft anchor so this is
+    // separation, not random placement.
+    for (let i = 0; i < points.length; i++) {
+      const source = trends[i];
+      const p = points[i];
+      p.x = clamp(p.x * 0.94 + source.x * 0.06, minX, maxX);
+      p.y = clamp(p.y * 0.94 + source.y * 0.06, minY, maxY);
+    }
+  }
+
+  return points;
+}
+
 const CATEGORY_COLORS: Record<string, string> = {
   politics: "#f18a91",
   economy: "#8fd1a4",
@@ -215,11 +264,13 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
     })
     .filter(Boolean) as Trend[];
 
+  const laidOut = spreadApart(raw);
+
   const clusters: Cluster[] = [];
   const used = new Set<string>();
-  for (const trend of raw) {
+  for (const trend of laidOut) {
     if (used.has(trend.id)) continue;
-    const members = raw.filter(other => {
+    const members = laidOut.filter(other => {
       if (used.has(other.id)) return false;
       const distance = Math.hypot(trend.x - other.x, trend.y - other.y);
       const semantic = Math.max(similarity(trend.keyword, other.keyword), trend.relatedKeywords.some(k => similarity(k, other.keyword) > 0.35) ? 0.7 : 0);
@@ -243,7 +294,7 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
     });
   }
 
-  const dust = raw
+  const dust = laidOut
     .filter(t => t.spreadScore < 0.42)
     .slice(0, 28)
     .map((t, i) => ({
@@ -254,7 +305,7 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
       opacity: 0.2 + t.momentumScore * 0.25,
     }));
 
-  return { timestamp: now, trends: raw, clusters, dust };
+  return { timestamp: now, trends: laidOut, clusters, dust };
 }
 
 function readHistory(): Snapshot[] {
@@ -529,7 +580,7 @@ export default function Home() {
             const inCluster = visibleUniverse?.clusters.some(c => c.trendIds.includes(t.id));
             if (inCluster && viewMode === "universe") return null;
             const active = searchMatch?.id === t.id;
-            const showLabel = t.size > 11 || active || viewMode !== "universe";
+            const showLabel = t.size > 14 || active || viewMode !== "universe";
             return (
               <button
                 key={t.id}
