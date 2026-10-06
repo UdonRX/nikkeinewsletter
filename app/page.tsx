@@ -463,7 +463,7 @@ export default function Home() {
         .related small { display:block; color:#68778b; margin-top:3px; font-size:7px; }
         .panel-actions { display:flex; gap:6px; margin-top:12px; }
         .panel-actions button { flex:1; border:1px solid rgba(185,201,222,.12); background:rgba(255,255,255,.04); color:#bac5d3; border-radius:10px; padding:8px; font-size:9px; }
-        .timeline { position:absolute; z-index:35; left:12px; right:12px; bottom:calc(10px + env(safe-area-inset-bottom)); height:50px; padding:7px 9px 5px; border:1px solid rgba(185,201,222,.12); border-radius:16px; background:rgba(5,10,17,.7); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); }
+        .timeline { position:absolute; z-index:35; left:12px; right:12px; bottom:calc(30px + env(safe-area-inset-bottom)); height:50px; padding:7px 9px 5px; border:1px solid rgba(185,201,222,.12); border-radius:16px; background:rgba(5,10,17,.7); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); }
         .timeline-row { display:flex; justify-content:space-between; color:#6f7e92; font-size:7px; letter-spacing:.08em; }
         .timeline input { width:100%; margin:5px 0 2px; accent-color:#c8d7e9; }
         .live-button { position:absolute; z-index:36; right:20px; bottom:calc(70px + env(safe-area-inset-bottom)); border:1px solid rgba(190,208,230,.18); border-radius:999px; padding:6px 9px; background:rgba(5,10,17,.7); color:#aebdce; font-size:8px; letter-spacing:.08em; backdrop-filter:blur(14px); }
