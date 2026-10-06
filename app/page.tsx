@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 type SourceKey = "google" | "yahoo" | "x";
 type Trend = {
@@ -392,7 +392,7 @@ export default function Home() {
     setViewMode("star-system");
   };
 
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     dragRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
