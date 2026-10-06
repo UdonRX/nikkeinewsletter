@@ -23,7 +23,7 @@ async function fetchArticlePublishedAt(rawUrl:string):Promise<string|undefined>{
   try{
     const response=await fetch(rawUrl,{redirect:"follow",headers:{"User-Agent":"NikkeiNewsReader/1.0","Accept":"text/html,application/xhtml+xml","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"},cache:"no-store"});
     debug.status=response.status;
-    if(!response.ok){console.log("[ARTICLE_TIME] FETCH_FAILED",debug);return undefined;}
+    if(!response.ok){return undefined;}
     const finalUrl=new URL(response.url||rawUrl);
     debug.finalUrl=finalUrl.toString();
     if(!/^(?:www\\.)?nikkei\\.com$/i.test(finalUrl.hostname))return undefined;
@@ -40,14 +40,13 @@ async function fetchArticlePublishedAt(rawUrl:string):Promise<string|undefined>{
       doc.querySelector('[itemprop="datePublished"]')?.textContent,
     ].filter(Boolean) as string[];
     debug.candidates=candidates;
-    console.log("[ARTICLE_TIME] HTML_FIELDS",debug);
     for(const value of candidates){
       const d=new Date(value);
-      if(!Number.isNaN(d.getTime())){debug.selected=value;console.log("[ARTICLE_TIME] SELECTED",debug);return d.toISOString();}
+      if(!Number.isNaN(d.getTime())){debug.selected=value;return d.toISOString();}
       const m=value.match(/(20\\d{2})[年\\/.-](\\d{1,2})[月\\/.-](\\d{1,2})日?[^\\d]{0,20}(\\d{1,2}):(\\d{2})/);
       if(m){
         const d2=new Date(Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3]),Number(m[4])-9,Number(m[5])));
-        if(!Number.isNaN(d2.getTime())){debug.selected=value;console.log("[ARTICLE_TIME] SELECTED",debug);return d2.toISOString();}
+        if(!Number.isNaN(d2.getTime())){debug.selected=value;return d2.toISOString();}
       }
     }
     const ldScripts=Array.from(doc.querySelectorAll('script[type="application/ld+json"]'));
@@ -63,13 +62,12 @@ async function fetchArticlePublishedAt(rawUrl:string):Promise<string|undefined>{
             const value=typeof item[key]==="string"?item[key]:"";
             if(value)debug.jsonLd.push({key,value});
             const d=new Date(value);
-            if(value&&!Number.isNaN(d.getTime())){debug.selected=value;console.log("[ARTICLE_TIME] SELECTED_JSONLD",debug);return d.toISOString();}
+            if(value&&!Number.isNaN(d.getTime())){debug.selected=value;return d.toISOString();}
           }
         }
       }catch{}
     }
-  }catch(error:any){debug.error=error?.message||String(error);console.log("[ARTICLE_TIME] ERROR",debug);}
-  console.log("[ARTICLE_TIME] NOT_FOUND",debug);
+  }catch(error:any){debug.error=error?.message||String(error);}
   return undefined;
 }
 
@@ -100,10 +98,6 @@ async function processGmailMessage(full:any){
   const resolved=await Promise.all(parsedEmail.map(async(n:any)=>({n,publishedAt:n.url?await fetchArticlePublishedAt(n.url):undefined})));
   for(const item of resolved){if(item.publishedAt)item.n.publishedAt=item.publishedAt;}
   const parsedArticles=parseNikkeiNews(parsedEmail,id,0,publishedAt);
-  console.log("[GMAIL] MESSAGE",{
-    id,from,kind,subject:header(full,"Subject"),emailParserArticles:parsedEmail.length,validArticles:parsedArticles.length,
-    hasHtml:Boolean(html),hasText:Boolean(text),mimeExtractMs,htmlParseAndExtractionMs,durationMs:Date.now()-messageStarted
-  });
   return {
     email:{id:"nikkei:"+id,threadId:full.threadId,from,kind,subject:header(full,"Subject"),receivedAt:dateHeader,internalDate:full.internalDate||"",issueDate:edition.issueDate,snippet:full.snippet||"",newsCount:parsedArticles.length,news:parsedArticles},
     articles:parsedArticles
@@ -111,7 +105,6 @@ async function processGmailMessage(full:any){
 }
 
 async function getNikkeiNews(accessToken:string, historyId:string|null){
-  console.log("[GMAIL] CONNECTED access token available");
   const started=Date.now();
   let fullSync=!historyId;
   let addedIds:string[]=[];
@@ -125,7 +118,6 @@ async function getNikkeiNews(accessToken:string, historyId:string|null){
       deletedIds=changes.deletedIds;
       nextHistoryId=changes.historyId||historyId;
     } catch(e:any) {
-      console.warn("[GMAIL] HISTORY_FALLBACK", {message:e?.message||String(e)});
       fullSync=true;
     }
   }
@@ -147,10 +139,6 @@ async function getNikkeiNews(accessToken:string, historyId:string|null){
     emails.push(result.email); articles.push(...result.articles);
   }
 
-  console.log("[GMAIL] SYNC_SUMMARY",{
-    fullSync,historyId:nextHistoryId,added:addedIds.length,deleted:deletedIds.length,
-    fetchedMessages:messages.length,parsedEmails:emails.length,parsedArticles:articles.length,durationMs:Date.now()-started
-  });
   return {emails,articles,historyId:nextHistoryId,deletedIds,fullSync};
 }
 

@@ -75,11 +75,9 @@ export async function fetchXTrends():Promise<TrendKeyword[]>{
   const now=Date.now();
   if(xTrendCache&&now-xTrendCache.at<TWITTREND_CACHE_TTL){
     const observedAt=xTrendCache.data[0]?.observedAt;
-    console.log("x_trend_fetch_success",JSON.stringify({source:"twittrend",region:"japan",count:xTrendCache.data.length,observedAt,topTrends:xTrendCache.data.slice(0,3).map(x=>x.term),cached:true}));
     return xTrendCache.data;
   }
   const startedAt=new Date().toISOString();
-  console.log("x_trend_fetch_start",JSON.stringify({source:"twittrend",region:"japan",url:TWITTREND_JAPAN_URL,startedAt,cached:false}));
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),8000);
   try{
@@ -95,20 +93,18 @@ export async function fetchXTrends():Promise<TrendKeyword[]>{
     const html=await response.text();
     const data=parseTwittrendJapan(html,new Date());
     xTrendCache={at:Date.now(),data};
-    console.log("x_trend_fetch_success",JSON.stringify({source:"twittrend",region:"japan",count:data.length,observedAt:data[0]?.observedAt,topTrends:data.slice(0,3).map(x=>x.term),cached:false}));
     return data;
   }catch(e){
-    console.warn("x_trend_fetch_error",JSON.stringify({source:"twittrend",region:"japan",url:TWITTREND_JAPAN_URL,status:e instanceof Error&&/^HTTP /.test(e.message)?e.message.slice(5):undefined,error:e instanceof Error?e.message:String(e),startedAt}));
     return [];
   }finally{
     clearTimeout(timer);
   }
 }
 
-export async function fetchGoogleTrends():Promise<TrendKeyword[]>{try{const observedAt=new Date().toISOString();const doc=new JSDOM(await getText("https://trends.google.com/trending/rss?geo=JP")).window.document;const out:TrendKeyword[]=[];for(const item of Array.from(doc.querySelectorAll("item"))){const term=clean(item.querySelector("title")?.textContent||"");if(term.length<2)continue;const rank=out.length+1;const pub=item.querySelector("pubDate")?.textContent||"";const approx=item.querySelector("approx_traffic,ht\\:approx_traffic")?.textContent||"";const started=pub?new Date(pub):new Date(observedAt);const traffic=Number((approx.match(/[0-9,.]+/)||[])[0]?.replace(/,/g,"")||0);out.push({term,googleRank:rank,sources:["Google Trends"],observedAt:Number.isNaN(started.getTime())?observedAt:started.toISOString(),searchIncrease:traffic||undefined} as TrendKeyword)}const result=uniq(out.map(x=>norm(x.term))).map(k=>out.find(x=>norm(x.term)===k)!).slice(0,30);console.log("trend_source_google",JSON.stringify({ok:true,count:result.length,top:result.slice(0,5).map(x=>x.term)}));return result}catch(e){console.warn("trend_source_google",JSON.stringify({ok:false,error:e instanceof Error?e.message:String(e)}));return[];}}
+export async function fetchGoogleTrends():Promise<TrendKeyword[]>{try{const observedAt=new Date().toISOString();const doc=new JSDOM(await getText("https://trends.google.com/trending/rss?geo=JP")).window.document;const out:TrendKeyword[]=[];for(const item of Array.from(doc.querySelectorAll("item"))){const term=clean(item.querySelector("title")?.textContent||"");if(term.length<2)continue;const rank=out.length+1;const pub=item.querySelector("pubDate")?.textContent||"";const approx=item.querySelector("approx_traffic,ht\\:approx_traffic")?.textContent||"";const started=pub?new Date(pub):new Date(observedAt);const traffic=Number((approx.match(/[0-9,.]+/)||[])[0]?.replace(/,/g,"")||0);out.push({term,googleRank:rank,sources:["Google Trends"],observedAt:Number.isNaN(started.getTime())?observedAt:started.toISOString(),searchIncrease:traffic||undefined} as TrendKeyword)}const result=uniq(out.map(x=>norm(x.term))).map(k=>out.find(x=>norm(x.term)===k)!).slice(0,30);return result}catch(e){return[];}}
 function yahooTerm(raw:string){let s=clean(raw).replace(/^\d+\s*/,"").replace(/^[0-9]+位/,"").split(/急上昇|https?:\/\//i)[0].split(/[／/]/)[0].trim();const hash=s.match(/#([^\s#]+)/);if(hash)return clean(hash[1]).replace(/[！!、。,:：]+$/,"").slice(0,24);s=s.split(/(?:返信数|リポスト数|いいね数|こいつ|誰よりも|これは|なんだこれ|繰り返します|本日)/i)[0];s=s.split(/[！!。！？]/)[0];s=s.replace(/^[^\p{L}\p{N}ぁ-んァ-ヶ一-龠]+/u,"");return clean(s).slice(0,24);}
 function isMeaningfulYahooTerm(term:string){const s=clean(term);if(s.length<2||s.length>24)return false;if(/[\u{1F300}-\u{1FAFF}]/u.test(s))return false;if(/(?:えっち|セックス|裸|ポルノ|アダルト|殺す|死ね)/i.test(s))return false;const letters=(s.match(/[ぁ-んァ-ヶ一-龠A-Za-z0-9]/g)||[]).length;return letters>=3;}
-export async function fetchYahooRealtimeTrends():Promise<TrendKeyword[]>{try{const doc=new JSDOM(await getText("https://search.yahoo.co.jp/realtime/")).window.document;const out:Array<{term:string;rank:number}>=[];for(const a of Array.from(doc.querySelectorAll("a[href]"))){const raw=clean(a.textContent||"");const href=a.getAttribute("href")||"";if(!/realtime/i.test(href)||/検索|ログイン|一覧|画像|動画|ニュース|設定|ヘルプ|Yahoo!/i.test(raw))continue;const rankMatch=raw.match(/^(?:\s*)?(\d+)\s*(?:位)?/);if(!rankMatch)continue;const term=yahooTerm(raw.slice(rankMatch[0].length));if(term.length<2||term.length>40)continue;out.push({term,rank:Number(rankMatch[1])});}const map=new Map<string,{term:string;rank:number}>();for(const x of out){const k=norm(x.term);if(k&&!map.has(k))map.set(k,x);}const terms=[...map.values()].sort((a,b)=>a.rank-b.rank).slice(0,30);console.log("trend_source_yahoo",JSON.stringify({ok:terms.length>0,count:terms.length,top:terms.slice(0,5).map(x=>x.term)}));return terms.map(x=>({term:x.term,yahooRank:x.rank,sources:["Yahoo!リアルタイム検索"],observedAt:new Date().toISOString()}));}catch(e){console.warn("trend_source_yahoo",JSON.stringify({ok:false,error:e instanceof Error?e.message:String(e)}));return[];}}
+export async function fetchYahooRealtimeTrends():Promise<TrendKeyword[]>{try{const doc=new JSDOM(await getText("https://search.yahoo.co.jp/realtime/")).window.document;const out:Array<{term:string;rank:number}>=[];for(const a of Array.from(doc.querySelectorAll("a[href]"))){const raw=clean(a.textContent||"");const href=a.getAttribute("href")||"";if(!/realtime/i.test(href)||/検索|ログイン|一覧|画像|動画|ニュース|設定|ヘルプ|Yahoo!/i.test(raw))continue;const rankMatch=raw.match(/^(?:\s*)?(\d+)\s*(?:位)?/);if(!rankMatch)continue;const term=yahooTerm(raw.slice(rankMatch[0].length));if(term.length<2||term.length>40)continue;out.push({term,rank:Number(rankMatch[1])});}const map=new Map<string,{term:string;rank:number}>();for(const x of out){const k=norm(x.term);if(k&&!map.has(k))map.set(k,x);}const terms=[...map.values()].sort((a,b)=>a.rank-b.rank).slice(0,30);return terms.map(x=>({term:x.term,yahooRank:x.rank,sources:["Yahoo!リアルタイム検索"],observedAt:new Date().toISOString()}));}catch(e){return[];}}
 function merge(a:TrendKeyword[],b:TrendKeyword[],c:TrendKeyword[]=[]){const m=new Map<string,TrendKeyword>();for(const x of [...a,...b,...c]){const k=norm(x.term);if(!k)continue;const y=m.get(k);if(!y){m.set(k,{...x,sources:[...(x.sources||[])]});continue;}m.set(k,{...y,googleRank:y.googleRank??x.googleRank,yahooRank:y.yahooRank??x.yahooRank,xRank:y.xRank??x.xRank,searchIncrease:y.searchIncrease??x.searchIncrease,postCount:y.postCount??x.postCount,observedAt:y.observedAt??x.observedAt,sourceUrl:y.sourceUrl??x.sourceUrl,sources:uniq([...(y.sources||[]),...(x.sources||[])])});}return[...m.values()].filter(x=>x.term).sort((x,y)=>Math.min(x.googleRank||99,x.yahooRank||99,x.xRank||99)-Math.min(y.googleRank||99,y.yahooRank||99,y.xRank||99));}
 function diversifyTrendArticles(articles:TrendNewsArticle[]){
   const ranked=[...articles].sort((a,b)=>b.impactScore-a.impactScore||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
@@ -159,8 +155,7 @@ async function fetchNewsData(trends:TrendKeyword[]){
     out.push({id:"googlenews:"+url,title,description:desc,url,source:clean(String(x.source||"Google News")),imageUrl:undefined,publishedAt:dateOf(String(x.pubDate||"")),category:category(title+" "+desc),trendTerms:hit.map(t=>t.term),googleRank:g<99?g:undefined,yahooRank:y<99?y:undefined,coverageCount:hit.length,impactScore:impact,importanceStars:stars});
   }
   const diversified=diversifyTrendArticles(out);
-  console.log("trend_related_news",JSON.stringify({ok:diversified.length>0,count:diversified.length,topics:uniq(diversified.flatMap(a=>a.trendTerms)).slice(0,20)}));
-    return diversified;
+  return diversified;
 }
 
 
@@ -189,9 +184,7 @@ async function fetchNewsDataTimeline(terms:TrendKeyword[]){
     const r=await fetch("https://newsdata.io/api/1/latest?"+q,{cache:"no-store"});const j=await r.json().catch(()=>({}));
     if(!r.ok||j?.status==="error")throw new Error(j?.results?.message||"HTTP "+r.status);
     if(Array.isArray(j?.results))rows.push(...j.results);ok++;
-  }catch(e){console.warn("[TIMELINE] NEWSDATA_QUERY_ERROR",{keyword:t.term,error:e instanceof Error?e.message:String(e)})}}
-  const seen=new Set<string>(),articles:TimelineArticle[]=[];
-  for(const x of rows){const title=clean(x.title||"");if(!title||!x.link||seen.has(x.article_id||x.link))continue;seen.add(x.article_id||x.link);articles.push({id:"newsdata:"+String(x.article_id||articles.length),title,summary:clean(x.description||x.content||""),description:clean(x.description||x.content||""),url:x.link,source:clean(x.source_name||"NewsData.io"),category:category(title+" "+(x.description||"")),publishedAt:dateOf(x.pubDate||""),imageUrl:x.image_url,keywords:Array.isArray(x.keywords)?x.keywords.slice(0,8):[]})}
+  }catch(e){if(!title||!x.link||seen.has(x.article_id||x.link))continue;seen.add(x.article_id||x.link);articles.push({id:"newsdata:"+String(x.article_id||articles.length),title,summary:clean(x.description||x.content||""),description:clean(x.description||x.content||""),url:x.link,source:clean(x.source_name||"NewsData.io"),category:category(title+" "+(x.description||"")),publishedAt:dateOf(x.pubDate||""),imageUrl:x.image_url,keywords:Array.isArray(x.keywords)?x.keywords.slice(0,8):[]})}
   const signals=selected.filter(t=>articles.some(a=>sim(a.title,t.term)>=.5)).map(t=>({...t,sources:uniq([...(t.sources||[]),"NewsData.io"])}));
   
   return{articles,signals};
@@ -219,6 +212,5 @@ export async function collectTimelineData(nikkeiArticles:TimelineArticle[]=[]){
  const eventArticleIds=new Set(events.flatMap(e=>(e.relatedArticles||[]).map(a=>a.id)));
  const articleItems=articles.filter(a=>!eventArticleIds.has(a.id)).map(a=>({id:a.id,type:"article" as const,title:a.title,summary:a.summary,category:a.category,publishedAt:a.publishedAt,detectedAt:a.publishedAt,updatedAt:a.updatedAt,trendScore:a.trendScore||0,importanceScore:a.importanceScore||0,source:a.source,sourceUrl:a.url,imageUrl:a.imageUrl,keywords:a.keywords,relatedArticles:[a]}));
  const timeline=[...articleItems,...topics,...events].sort((a,b)=>new Date(b.detectedAt||b.publishedAt||0).getTime()-new Date(a.detectedAt||a.publishedAt||0).getTime());
- console.log("[TIMELINE] SUMMARY",{google:base.google.length,yahoo:base.yahoo.length,newsdata:nd.articles.length,trendSignals:terms.length,dedupedArticles:articles.length,topics:topics.length,events:events.length,articleItems:articleItems.length,timelineItems:timeline.length,eventArticleLinks:events.map(e=>({id:e.id,articles:e.relatedArticles?.length||0})),scores:timeline.slice(0,20).map(x=>({type:x.type,title:x.title,trendScore:x.trendScore,importanceScore:x.importanceScore}))});
  return{google:base.google,yahoo:base.yahoo,newsdata:nd.signals,signals:terms,articles,timeline};
 }
