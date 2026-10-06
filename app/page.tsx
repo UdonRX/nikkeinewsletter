@@ -60,7 +60,7 @@ const CACHE_KEY = "trend-universe-latest-v1";
 const MAX_HISTORY = 48;
 
 const clamp = (n: number, a = 0, b = 1) => Math.max(a, Math.min(b, n));
-const norm = (s: string) => (s || "").toLowerCase().replace(/[「」『』【】\\s　]/g, "").replace(/[^ぁ-んァ-ヶ一-龠a-z0-9]/gi, "");
+const norm = (s: string) => (s || "").toLowerCase().replace(/[「」『』【】\s　]/g, "").replace(/[^ぁ-んァ-ヶ一-龠a-z0-9]/gi, "");
 const words = (s: string) => {
   const n = norm(s);
   if (n.length < 2) return new Set([n]);
@@ -414,7 +414,7 @@ export default function Home() {
 
   return (
     <main className="universe-app">
-      <style>{\`
+      <style>{`
         :root { color-scheme: dark; }
         html, body { margin:0; padding:0; background:#03060c; overflow:hidden; }
         body { min-height:100dvh; }
@@ -431,7 +431,7 @@ export default function Home() {
         .search input { min-width:0; width:100%; border:0; outline:0; background:transparent; color:#e9eff7; font-size:10px; }
         .search input::placeholder { color:#748195; }
         .space { position:absolute; inset:0; touch-action:none; user-select:none; }
-        .space-inner { position:absolute; inset:0; transform:translate3d(\${pan.x}%,\${pan.y}%,0) scale(\${zoom}); transform-origin:50% 50%; transition:transform .65s cubic-bezier(.2,.8,.2,1); }
+        .space-inner { position:absolute; inset:0; transform:translate3d(${pan.x}%,${pan.y}%,0) scale(${zoom}); transform-origin:50% 50%; transition:transform .65s cubic-bezier(.2,.8,.2,1); }
         .dust { position:absolute; border-radius:50%; background:#c4d1e1; box-shadow:0 0 8px rgba(180,205,235,.22); }
         .axis-label { position:absolute; z-index:2; color:rgba(152,167,188,.18); font-size:7px; letter-spacing:.18em; pointer-events:none; }
         .axis-top { top:17%; left:50%; transform:translateX(-50%); }
@@ -473,7 +473,7 @@ export default function Home() {
         .search-hit { position:absolute; z-index:38; top:calc(50px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%); color:#aebdce; font-size:8px; background:rgba(5,10,17,.72); padding:5px 9px; border-radius:999px; pointer-events:none; }
         @media(min-width:800px){ .universe-header{left:28px;right:28px}.hud{left:auto;right:28px;bottom:95px;width:360px}.timeline{left:28px;right:28px}.live-button{right:36px}.status{left:31px}.search{width:240px} }
         @media(prefers-reduced-motion:reduce){ .space-inner,.star-core{transition:none!important} }
-      \`}</style>
+      `}</style>
 
       <header className="universe-header">
         <div className="brand">TREND UNIVERSE<small>OBSERVE WHAT IS HAPPENING NOW</small></div>
@@ -495,14 +495,14 @@ export default function Home() {
           <span className="axis-label axis-right">WIDESPREAD</span>
 
           {visibleUniverse?.dust.map(d => (
-            <span key={d.id} className="dust" style={{ left: \`\${d.x * 100}%\`, top: \`\${d.y * 100}%\`, width: d.size, height: d.size, opacity: d.opacity }} />
+            <span key={d.id} className="dust" style={{ left: `${d.x * 100}%`, top: `${d.y * 100}%`, width: d.size, height: d.size, opacity: d.opacity }} />
           ))}
 
           {visibleUniverse?.clusters.map(c => (
             <button
               key={c.id}
               className="cluster"
-              style={{ left: \`\${c.x * 100}%\`, top: \`\${c.y * 100}%\`, ["--cc" as any]: CATEGORY_COLORS[c.category] || CATEGORY_COLORS.other, ["--cs" as any]: \`\${Math.min(180, c.size)}px\` }}
+              style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%`, ["--cc" as any]: CATEGORY_COLORS[c.category] || CATEGORY_COLORS.other, ["--cs" as any]: `${Math.min(180, c.size)}px` }}
               onClick={e => { e.stopPropagation(); openCluster(c); }}
             >
               <span className="cluster-cloud" />
@@ -521,9 +521,9 @@ export default function Home() {
                 key={t.id}
                 className="star"
                 style={{
-                  left: \`\${t.x * 100}%\`,
-                  top: \`\${t.y * 100}%\`,
-                  ["--s" as any]: \`\${Math.max(3, t.size * (active ? 1.3 : 1))}px\`,
+                  left: `${t.x * 100}%`,
+                  top: `${t.y * 100}%`,
+                  ["--s" as any]: `${Math.max(3, t.size * (active ? 1.3 : 1))}px`,
                   ["--b" as any]: t.brightness,
                   ["--c" as any]: t.color,
                 }}
@@ -543,7 +543,7 @@ export default function Home() {
       {searchMatch && <div className="search-hit">FOUND · {searchMatch.keyword}</div>}
 
       <div className="status">
-        {loading ? "OBSERVING…" : live ? \`LIVE · \${visibleUniverse ? timeLabel(visibleUniverse.timestamp) : "--:--"}\` : \`PAST · \${visibleUniverse ? timeLabel(visibleUniverse.timestamp) : "--:--"}\`}
+        {loading ? "OBSERVING…" : live ? `LIVE · ${visibleUniverse ? timeLabel(visibleUniverse.timestamp) : "--:--"}` : `PAST · ${visibleUniverse ? timeLabel(visibleUniverse.timestamp) : "--:--"}`}
       </div>
 
       {!live && <button className="live-button" onClick={() => { setHistoryIndex(-1); setLive(true); }}>NOW / LIVE</button>}
@@ -572,9 +572,9 @@ export default function Home() {
                 <div className="panel-head"><div><div className="eyebrow">STAR SYSTEM</div><h2>{selectedTrend.keyword}</h2></div><button className="close" onClick={() => {setViewMode("universe");setSelectedTrend(null)}}>×</button></div>
                 <p className="panel-copy">中心星に近いほど関連性が強いトレンド。ニュース一覧には切り替えず、宇宙空間のまま話題の構造を展開している。</p>
                 <div className="source-grid">
-                  <div className="source-cell"><span>GOOGLE</span><strong>{selectedTrend.sources.google ? \`#\${selectedTrend.sources.google}\` : "—"}</strong></div>
-                  <div className="source-cell"><span>YAHOO</span><strong>{selectedTrend.sources.yahoo ? \`#\${selectedTrend.sources.yahoo}\` : "—"}</strong></div>
-                  <div className="source-cell"><span>X</span><strong>{selectedTrend.sources.x ? \`#\${selectedTrend.sources.x}\` : "—"}</strong></div>
+                  <div className="source-cell"><span>GOOGLE</span><strong>{selectedTrend.sources.google ? `#${selectedTrend.sources.google}` : "—"}</strong></div>
+                  <div className="source-cell"><span>YAHOO</span><strong>{selectedTrend.sources.yahoo ? `#${selectedTrend.sources.yahoo}` : "—"}</strong></div>
+                  <div className="source-cell"><span>X</span><strong>{selectedTrend.sources.x ? `#${selectedTrend.sources.x}` : "—"}</strong></div>
                 </div>
                 <div className="related">
                   {selectedSystem.map((t, i) => <button key={t.id} onClick={() => openTrend(t)}>{i === 0 ? "✦ " : "· "}{t.keyword}<small>{categoryName(t.category)} · spread {Math.round(t.spreadScore * 100)} · momentum {Math.round(t.momentumScore * 100)}</small></button>)}
