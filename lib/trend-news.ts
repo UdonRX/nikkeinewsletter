@@ -56,7 +56,7 @@ function parseTwittrendJapan(html:string,now=new Date()):TrendKeyword[]{
   const out:TrendKeyword[]=[];
   for(const li of rows){
     const text=clean(li.textContent||"");
-    const rankMatch=text.match(/^\\s*(\\d+)\\s*\\./);
+    const rankMatch=text.match(/^\s*(\d+)\s*\./);
     if(!rankMatch)continue;
     const rank=Number(rankMatch[1]);
     if(rank<1||rank>50||seen.has(rank))continue;
@@ -210,7 +210,7 @@ function buildTimelineEvents(articles:TimelineArticle[],terms:TrendKeyword[]){
 }
 
 export async function collectTimelineData(nikkeiArticles:TimelineArticle[]=[]){
- const base=await collectTrendNews();const x=await fetchXTrends();const merged=merge(base.trends,x);const nd=await fetchNewsDataTimeline(merged);const terms=merge(merged,nd.signals);
+ const base=await collectTrendNews();const merged=base.trends;const nd=await fetchNewsDataTimeline(merged);const terms=merge(merged,nd.signals);
  const rssMod=await import("@/lib/rss");const rss=await rssMod.fetchNewsArticles(terms.map(x=>x.term));
  const rssArticles:TimelineArticle[]=rss.map((a:any)=>({id:"rss:"+a.id,title:a.title,summary:a.description||a.content||"",description:a.description||a.content||"",url:a.url,source:a.source,category:a.primaryCategory||a.category||"other",publishedAt:a.publishedAt,updatedAt:a.updatedAt,imageUrl:a.imageUrl,importanceScore:a.importanceScore,keywords:a.tags||[]}));
  const articles=dedupeTimelineArticles([...nikkeiArticles,...nd.articles,...rssArticles]).map(a=>({...a,trendScore:articleTrend(a,terms),importanceScore:Math.max(a.importanceScore||0,articleImportance(a,1,1))}));
