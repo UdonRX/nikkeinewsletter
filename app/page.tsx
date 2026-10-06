@@ -214,10 +214,34 @@ function classifyCategory(text: string) {
   return "other";
 }
 
-function natureScore(text: string) {
-  const event = (text.match(/発表|決定|成立|開始|発生|事故|地震|台風|会見|発売|合意|選挙|判決|逮捕|攻撃|災害|開幕|優勝/g) || []).length;
-  const reaction = (text.match(/炎上|批判|反応|話題|バズ|意見|賛否|トレンド|人気|拡散|SNS|コメント|議論/g) || []).length;
-  return clamp(0.5 + (event - reaction) * 0.12);
+function natureScore(text: string, category = "other") {
+  const event = (text.match(/発表|発表会|決定|成立|開始|発生|事故|地震|台風|会見|発売|合意|選挙|判決|逮捕|攻撃|災害|開幕|優勝|契約|就任|辞任|死亡|負傷|発見|公開|導入|買収|提携|決算|上場|値上がり|値下がり/g) || []).length;
+  const reaction = (text.match(/炎上|批判|反応|話題|バズ|意見|賛否|トレンド|人気|拡散|SNS|コメント|議論|口コミ|感想|騒然|歓喜|困惑|絶賛|不満|物議/g) || []).length;
+
+  // A bare trend term often contains no explicit event/reaction word.
+  // Use the topic category as a weak prior only in that case, so the Y axis
+  // still represents topic nature instead of collapsing every term to 0.5.
+  const categoryPrior: Record<string, number> = {
+    politics: 0.76,
+    economy: 0.70,
+    market: 0.68,
+    international: 0.72,
+    disaster: 0.84,
+    science: 0.80,
+    technology: 0.63,
+    society: 0.61,
+    sports: 0.55,
+    entertainment: 0.43,
+    life: 0.50,
+    other: 0.50,
+  };
+
+  const prior = categoryPrior[category] ?? 0.5;
+  const lexical = clamp(0.5 + (event - reaction) * 0.12);
+  if (event === 0 && reaction === 0) return prior;
+
+  // Lexical evidence is stronger than the category prior.
+  return clamp(lexical * 0.78 + prior * 0.22);
 }
 
 function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
@@ -271,7 +295,7 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
       );
       const text = [keyword, ...relatedWords, ...relatedArticles.map(a => a.title)].join(" ");
       const category = classifyCategory(text);
-      const nature = natureScore(text);
+      const nature = natureScore(text, category);
       const y = 0.08 + Math.pow(1 - nature, 0.82) * 0.84;
       const xPos = 0.06 + Math.pow(spread, 0.82) * 0.88;
       const size = 3.5 + spread * 15 + (sourceCount >= 3 ? 2.5 : 0);
