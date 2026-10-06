@@ -324,12 +324,17 @@ export default function Home() {
       const r = await fetch("/api/emails", { cache: "no-store", headers: { "x-news-debug-id": crypto.randomUUID() } });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "universe_error");
+      const trendPayload = Array.isArray(d?.trends) ? d.trends.length : 0;
+      console.info("[TREND_UNIVERSE] fetch_complete", { debugId: d?.debug?.debugId || "unknown", trends: trendPayload, timeline: Array.isArray(d?.timeline) ? d.timeline.length : 0 });
       const next = buildUniverse(d);
+      console.info("[TREND_UNIVERSE] build_complete", { trends: next.trends.length, clusters: next.clusters.length, dust: next.dust.length, timestamp: next.timestamp });
       saveUniverse(next);
+      const nextHistory = readHistory();
       setUniverse(next);
-      setHistory(readHistory());
+      setHistory(nextHistory);
       setHistoryIndex(-1);
       setLive(true);
+      console.info("[TREND_UNIVERSE] history", { snapshots: nextHistory.length, sliderEnabled: nextHistory.length > 1 });
     } catch (e) {
       console.warn("[TREND_UNIVERSE] fetch failed", e);
     } finally {
@@ -340,9 +345,15 @@ export default function Home() {
   useEffect(() => {
     const cached = readCachedUniverse();
     const old = readHistory();
-    if (cached) { setUniverse(cached); setLoading(false); }
+    if (cached) {
+      setUniverse(cached);
+      setLoading(false);
+      console.info("[TREND_UNIVERSE] cache_loaded", { trends: cached.trends.length, clusters: cached.clusters.length, snapshots: old.length });
+    }
     setHistory(old);
     refresh();
+    const timer = window.setInterval(refresh, 30 * 60 * 1000);
+    return () => window.clearInterval(timer);
   }, [refresh]);
 
   const visibleUniverse = useMemo(() => {
@@ -375,6 +386,10 @@ export default function Home() {
   }, [searchMatch]);
 
   const displayedTrends = visibleUniverse?.trends || [];
+  useEffect(() => {
+    if (!visibleUniverse) return;
+    console.info("[TREND_UNIVERSE] render_ready", { trends: visibleUniverse.trends.length, clusters: visibleUniverse.clusters.length, history: history.length, historyIndex });
+  }, [visibleUniverse, history.length, historyIndex]);
   const selectedMembers = selectedCluster ? displayedTrends.filter(t => selectedCluster.trendIds.includes(t.id)) : [];
   const selectedSystem = selectedTrend
     ? displayedTrends.filter(t => t.id === selectedTrend.id || similarity(t.keyword, selectedTrend.keyword) > 0.28 || selectedTrend.relatedKeywords.includes(t.keyword)).slice(0, 9)
@@ -404,10 +419,14 @@ export default function Home() {
   const onPointerUp = () => { dragRef.current = null; };
 
   const setPast = (value: number) => {
-    if (!history.length) return;
+    if (history.length < 2) {
+      console.info("[TREND_UNIVERSE] slider_ignored", { reason: "insufficient_history", snapshots: history.length });
+      return;
+    }
     const idx = Math.round(value * (history.length - 1));
     setHistoryIndex(idx);
     setLive(idx === history.length - 1);
+    console.info("[TREND_UNIVERSE] slider_change", { value: Number(value.toFixed(3)), index: idx, snapshots: history.length, timestamp: history[idx]?.timestamp || null });
   };
 
   const currentSlider = historyIndex < 0 ? 1 : history.length <= 1 ? 1 : historyIndex / (history.length - 1);
@@ -428,7 +447,7 @@ export default function Home() {
         .brand small { display:block; margin-top:4px; color:rgba(157,170,188,.58); letter-spacing:.08em; font-size:7px; font-weight:600; }
         .search { pointer-events:auto; width:min(190px,42vw); height:31px; display:flex; align-items:center; gap:7px; padding:0 10px; border:1px solid rgba(185,201,222,.14); border-radius:999px; background:rgba(7,12,20,.52); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); }
         .search span { color:#94a5bc; font-size:13px; }
-        .search input { min-width:0; width:100%; border:0; outline:0; background:transparent; color:#e9eff7; font-size:10px; }
+        .search input { min-width:0; width:100%; border:0; outline:0; background:transparent; color:#e9eff7; font-size:16px; }
         .search input::placeholder { color:#748195; }
         .space { position:absolute; inset:0; touch-action:none; user-select:none; }
         .space-inner { position:absolute; inset:0; transform:translate3d(${pan.x}%,${pan.y}%,0) scale(${zoom}); transform-origin:50% 50%; transition:transform .65s cubic-bezier(.2,.8,.2,1); }
@@ -465,7 +484,7 @@ export default function Home() {
         .panel-actions button { flex:1; border:1px solid rgba(185,201,222,.12); background:rgba(255,255,255,.04); color:#bac5d3; border-radius:10px; padding:8px; font-size:9px; }
         .timeline { position:absolute; z-index:35; left:12px; right:12px; bottom:calc(30px + env(safe-area-inset-bottom)); height:50px; padding:7px 9px 5px; border:1px solid rgba(185,201,222,.12); border-radius:16px; background:rgba(5,10,17,.7); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); }
         .timeline-row { display:flex; justify-content:space-between; color:#6f7e92; font-size:7px; letter-spacing:.08em; }
-        .timeline input { width:100%; margin:5px 0 2px; accent-color:#c8d7e9; }
+        .timeline input { width:100%; margin:5px 0 2px; accent-color:#c8d7e9; touch-action:none; }
         .live-button { position:absolute; z-index:36; right:20px; bottom:calc(70px + env(safe-area-inset-bottom)); border:1px solid rgba(190,208,230,.18); border-radius:999px; padding:6px 9px; background:rgba(5,10,17,.7); color:#aebdce; font-size:8px; letter-spacing:.08em; backdrop-filter:blur(14px); }
         .status { position:absolute; z-index:30; left:15px; bottom:calc(72px + env(safe-area-inset-bottom)); color:rgba(143,158,178,.45); font-size:7px; pointer-events:none; }
         .empty { position:absolute; inset:0; display:grid; place-items:center; color:#718096; font-size:10px; letter-spacing:.08em; }
@@ -602,7 +621,7 @@ export default function Home() {
 
       <div className="timeline">
         <div className="timeline-row"><span>24H</span><span>12H</span><span>6H</span><span>3H</span><span>1H</span><span>NOW</span></div>
-        <input aria-label="トレンド時間スライダー" type="range" min="0" max="1" step="0.001" value={currentSlider} onChange={e => setPast(Number(e.target.value))} />
+        <input aria-label="トレンド時間スライダー" type="range" min="0" max="1" step="0.001" value={currentSlider} disabled={history.length < 2} onChange={e => setPast(Number(e.target.value))} />
       </div>
     </main>
   );
