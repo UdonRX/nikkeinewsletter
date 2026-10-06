@@ -183,13 +183,14 @@ async function fetchNewsDataTimeline(terms:TrendKeyword[]){
   const key=process.env.NEWSDATA_API_KEY||process.env.NEWS_DATA_API_KEY;
   if(!key){return{articles:[] as TimelineArticle[],signals:[] as TrendKeyword[]};}
   const selected=terms.slice().sort((a,b)=>(a.googleRank||99)-(b.googleRank||99)||(a.yahooRank||99)-(b.yahooRank||99)).slice(0,8);
-  const rows:NewsDataRow[]=[];let ok=0;
-  for(const t of selected){try{
+  const responses=await Promise.allSettled(selected.map(async t=>{
     const q=new URLSearchParams({apikey:key,q:t.term,country:"jp",language:"jp",removeduplicate:"1"});
-    const r=await fetch("https://newsdata.io/api/1/latest?"+q,{cache:"no-store"});const j=await r.json().catch(()=>({}));
+    const r=await fetch("https://newsdata.io/api/1/latest?"+q,{cache:"no-store"});
+    const j=await r.json().catch(()=>({}));
     if(!r.ok||j?.status==="error")throw new Error(j?.results?.message||"HTTP "+r.status);
-    if(Array.isArray(j?.results))rows.push(...j.results);ok++;
-  }catch(e){}}
+    return Array.isArray(j?.results)?j.results:[];
+  }));
+  const rows:NewsDataRow[]=responses.flatMap(r=>r.status==="fulfilled"?r.value:[]);
   const seen=new Set<string>(),articles:TimelineArticle[]=[];
   for(const x of rows){const title=clean(x.title||"");if(!title||!x.link||seen.has(x.article_id||x.link))continue;seen.add(x.article_id||x.link);articles.push({id:"newsdata:"+String(x.article_id||articles.length),title,summary:clean(x.description||x.content||""),description:clean(x.description||x.content||""),url:x.link,source:clean(x.source_name||"NewsData.io"),category:category(title+" "+(x.description||"")),publishedAt:dateOf(x.pubDate||""),imageUrl:x.image_url,keywords:Array.isArray(x.keywords)?x.keywords.slice(0,8):[]})}
   const signals=selected.filter(t=>articles.some(a=>sim(a.title,t.term)>=.5)).map(t=>({...t,sources:uniq([...(t.sources||[]),"NewsData.io"])}));
