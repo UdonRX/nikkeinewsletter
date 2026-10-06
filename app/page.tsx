@@ -764,7 +764,6 @@ export default function Home() {
         .star { position:absolute; transform:translate(-50%,-50%); border:0; background:transparent; padding:0; cursor:pointer; color:white; }
         .star-core { position:relative; display:block; width:var(--s); height:var(--s); border-radius:50%; background:radial-gradient(circle, #fff 0%, var(--c) 32%, color-mix(in srgb,var(--c) 55%,transparent) 60%, transparent 72%); box-shadow:0 0 calc(var(--s)*1.2) color-mix(in srgb,var(--c) 48%,transparent); opacity:var(--b); transition:width .7s,height .7s,opacity .7s,box-shadow .7s,transform .7s; }
         .star:hover .star-core, .star:active .star-core { transform:scale(1.18); }
-        .star-label { display:block; margin-top:5px; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:rgba(232,239,247,.78); font-size:8px; text-shadow:0 2px 8px #000; letter-spacing:-.01em; }
         .cluster { position:absolute; transform:translate(-50%,-50%); border:0; background:transparent; padding:0; color:white; cursor:pointer; }
         .cluster-cloud { position:absolute; left:50%; top:50%; width:var(--cs); height:var(--cs); transform:translate(-50%,-50%); border-radius:50%; background:radial-gradient(circle, color-mix(in srgb,var(--cc) 16%,transparent), transparent 68%); filter:blur(1px); pointer-events:none; }
         .cluster-name { position:relative; color:rgba(239,244,250,.55); font-size:8px; letter-spacing:.06em; text-shadow:0 2px 10px #000; }
