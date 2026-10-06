@@ -18,9 +18,18 @@ type Trend = {
   size: number;
   brightness: number;
   color: string;
-  firstSeenAt: string;
+  // STEP 1: a star has independent reach, momentum, and lifecycle state.
+  trendReach: number;
+  trendMomentum: number;
+  bornAt: string;
+  peakAt: string | null;
   lastSeenAt: string;
+  decayRate: number;
+  lifecycle: "birth" | "growth" | "peak" | "decay" | "dormant";
+  peakReach: number;
+  peakMomentum: number;
   relatedArticles: Article[];
+  relatedMediaCount: number;
 };
 
 type Article = {
@@ -266,10 +275,20 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
     }));
   };
 
+  const previousSnapshots = readHistory();
+  const previousByKeyword = new Map<string, Trend>();
+  for (const snapshot of previousSnapshots) {
+    for (const trend of snapshot.universe?.trends || []) {
+      const key = norm(trend.keyword);
+      if (key) previousByKeyword.set(key, trend);
+    }
+  }
+
   const raw = signals
-    .map((s: any, index: number) => {
+    .map((s: any) => {
       const keyword = String(s.term || s.keyword || "").trim();
       if (!keyword) return null;
+
       const google = sourceRank(s, "google");
       const yahoo = sourceRank(s, "yahoo");
       const x = sourceRank(s, "x");
@@ -277,53 +296,139 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
       const ranks = [google, yahoo, x].filter(Boolean) as number[];
       const bestRank = ranks.length ? Math.min(...ranks) : 50;
       const relatedArticles = articleByTerm(keyword);
+
+      // Trend Reach = how widely the topic has spread.
+      const googleReach = google ? clamp((51 - Math.min(50, google)) / 50) : 0;
+      const yahooReach = yahoo ? clamp((51 - Math.min(50, yahoo)) / 50) : 0;
+      const xReach = x ? clamp((51 - Math.min(50, x)) / 50) : 0;
+      const searchReach = Number.isFinite(Number(s.searchIncrease))
+        ? clamp(Math.log10(Math.max(1, Number(s.searchIncrease))) / 6)
+        : 0;
+      const mediaNames = new Set(
+        relatedArticles.map(a => String(a.source || "").trim()).filter(Boolean)
+      );
+      const articleReach = clamp(relatedArticles.length / 12);
+      const mediaReach = clamp(mediaNames.size / 8);
+      const crossSourceReach = clamp(sourceCount / 3);
+
+      // Keep the dimensions independent: reach is not momentum.
+      const spread = clamp(
+        googleReach * 0.18 +
+        yahooReach * 0.16 +
+        xReach * 0.16 +
+        searchReach * 0.16 +
+        articleReach * 0.16 +
+        mediaReach * 0.10 +
+        crossSourceReach * 0.08
+      );
+
+      // Trend Momentum = how strongly the topic is moving now.
+      const rankMomentum = ranks.length
+        ? clamp((51 - Math.min(50, bestRank)) / 50)
+        : 0;
+      const sourceMomentum = crossSourceReach;
+      const searchMomentum = searchReach;
+      const coverageMomentum = clamp((relatedArticles.length + mediaNames.size) / 20);
+      const previous = previousByKeyword.get(norm(keyword));
+      const previousMomentum = previous?.trendMomentum ?? previous?.momentumScore;
+      const previousReach = previous?.trendReach ?? previous?.spreadScore;
+      const observed = s.observedAt || now;
+      const observedMs = new Date(observed).getTime();
+      const previousMs = previous ? new Date(previous.lastSeenAt).getTime() : NaN;
+      const elapsedHours = Number.isFinite(previousMs)
+        ? Math.max(0.25, (observedMs - previousMs) / 3600000)
+        : 1;
+
+      const rawMomentum = clamp(
+        rankMomentum * 0.38 +
+        searchMomentum * 0.27 +
+        sourceMomentum * 0.18 +
+        coverageMomentum * 0.17
+      );
+      const momentumDelta = previousMomentum == null ? 0 : rawMomentum - previousMomentum;
+      const acceleration = clamp(0.5 + momentumDelta * 2.5);
+      const momentum = clamp(rawMomentum * 0.72 + acceleration * 0.28);
+
+      const trendReach = spread;
+      const trendMomentum = momentum;
+      const text = [keyword, ...signals
+        .map((q: any) => String(q.term || q.keyword || ""))
+        .filter((q: string) => q && q !== keyword && similarity(keyword, q) >= 0.28)
+        .slice(0, 8), ...relatedArticles.map(a => a.title)].join(" ");
       const relatedWords = signals
         .map((q: any) => String(q.term || q.keyword || ""))
         .filter((q: string) => q && q !== keyword && similarity(keyword, q) >= 0.28)
         .slice(0, 8);
-      const spread = clamp(
-        0.14 +
-        sourceCount * 0.18 +
-        Math.max(0, (50 - Math.min(50, bestRank)) / 50) * 0.45 +
-        Math.min(0.18, relatedArticles.length * 0.025)
-      );
-      const momentum = clamp(
-        0.2 +
-        (bestRank <= 3 ? 0.55 : bestRank <= 10 ? 0.35 : 0.15) +
-        (sourceCount >= 2 ? 0.15 : 0) +
-        Math.min(0.2, relatedArticles.length * 0.025)
-      );
-      const text = [keyword, ...relatedWords, ...relatedArticles.map(a => a.title)].join(" ");
       const category = classifyCategory(text);
       const nature = natureScore(text, category);
       const y = 0.08 + Math.pow(1 - nature, 0.82) * 0.84;
-      const xPos = 0.06 + Math.pow(spread, 0.82) * 0.88;
-      const size = 3.5 + spread * 15 + (sourceCount >= 3 ? 2.5 : 0);
-      const brightness = 0.35 + momentum * 0.65;
+      const xPos = 0.06 + Math.pow(trendReach, 0.82) * 0.88;
+
+      // Size follows reach; brightness follows momentum.
+      const size = 3.5 + trendReach * 15 + (sourceCount >= 3 ? 2.5 : 0);
+      const brightness = 0.35 + trendMomentum * 0.65;
       const sourceNames = [
         google ? "Google" : "",
         yahoo ? "Yahoo" : "",
         x ? "X" : "",
       ].filter(Boolean);
-      const observed = s.observedAt || now;
+
+      // Lifecycle is accumulated from the same stable keyword across snapshots.
+      const previousPeakReach = previous?.peakReach ?? previousReach ?? 0;
+      const previousPeakMomentum = previous?.peakMomentum ?? previousMomentum ?? 0;
+      const isNew = !previous;
+      const peakImproved =
+        trendReach > previousPeakReach * 1.005 ||
+        trendMomentum > previousPeakMomentum * 1.005;
+      const peakReach = Math.max(previousPeakReach, trendReach);
+      const peakMomentum = Math.max(previousPeakMomentum, trendMomentum);
+      const peakAt = isNew
+        ? null
+        : peakImproved
+          ? observed
+          : previous?.peakAt || null;
+
+      // Positive decayRate means momentum is falling. It is normalized to 0..1.
+      const decayRate = previousMomentum == null
+        ? 0
+        : clamp((previousMomentum - trendMomentum) / elapsedHours);
+
+      const lifecycle: Trend["lifecycle"] = isNew
+        ? "birth"
+        : trendMomentum >= Math.max(0.72, peakMomentum * 0.94)
+          ? "peak"
+          : decayRate >= 0.08
+            ? "decay"
+            : trendReach > (previousReach ?? 0) + 0.02 || trendMomentum > (previousMomentum ?? 0) + 0.02
+              ? "growth"
+              : "dormant";
+
       return {
-        id: "trend:" + norm(keyword) + ":" + index,
+        id: "trend:" + norm(keyword),
         keyword,
         relatedKeywords: relatedWords,
         sources: { google, yahoo, x },
         sourceNames,
         category,
-        spreadScore: spread,
-        momentumScore: momentum,
+        spreadScore: trendReach,
+        momentumScore: trendMomentum,
+        trendReach,
+        trendMomentum,
         natureScore: nature,
         x: xPos,
         y,
         size,
         brightness,
         color: CATEGORY_COLORS[category] || CATEGORY_COLORS.other,
-        firstSeenAt: observed,
+        bornAt: previous?.bornAt || observed,
+        peakAt,
         lastSeenAt: observed,
+        decayRate,
+        lifecycle,
+        peakReach,
+        peakMomentum,
         relatedArticles,
+        relatedMediaCount: mediaNames.size,
       } as Trend;
     })
     .filter(Boolean) as Trend[];
@@ -474,6 +579,9 @@ function interpolate(a: Universe, b: Universe, at: number): Universe {
       brightness: t.brightness + (other.brightness - t.brightness) * at,
       spreadScore: t.spreadScore + (other.spreadScore - t.spreadScore) * at,
       momentumScore: t.momentumScore + (other.momentumScore - t.momentumScore) * at,
+      trendReach: t.trendReach + (other.trendReach - t.trendReach) * at,
+      trendMomentum: t.trendMomentum + (other.trendMomentum - t.trendMomentum) * at,
+      decayRate: t.decayRate + (other.decayRate - t.decayRate) * at,
     };
   });
   return { ...b, timestamp: new Date(new Date(a.timestamp).getTime() + (new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()) * at).toISOString(), trends };
