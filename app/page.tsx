@@ -183,8 +183,8 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
       const text = [keyword, ...relatedWords, ...relatedArticles.map(a => a.title)].join(" ");
       const category = classifyCategory(text);
       const nature = natureScore(text);
-      const y = 1 - nature;
-      const xPos = spread;
+      const y = 0.08 + Math.pow(1 - nature, 0.82) * 0.84;
+      const xPos = 0.06 + Math.pow(spread, 0.82) * 0.88;
       const size = 3.5 + spread * 15 + (sourceCount >= 3 ? 2.5 : 0);
       const brightness = 0.35 + momentum * 0.65;
       const sourceNames = [
@@ -228,8 +228,8 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
     });
     if (members.length < 2) continue;
     members.forEach(m => used.add(m.id));
-    const x = members.reduce((n, m) => n + m.x, 0) / members.length;
-    const y = members.reduce((n, m) => n + m.y, 0) / members.length;
+    const x = clamp(0.04 + (members.reduce((n, m) => n + m.x, 0) / members.length - 0.04) * 1.04, 0.04, 0.96);
+    const y = clamp(0.05 + (members.reduce((n, m) => n + m.y, 0) / members.length - 0.05) * 0.94, 0.05, 0.95);
     const spread = members.reduce((n, m) => n + m.spreadScore, 0) / members.length;
     clusters.push({
       id: "cluster:" + norm(trend.keyword),
@@ -452,11 +452,11 @@ export default function Home() {
         .space { position:absolute; inset:0; touch-action:none; user-select:none; }
         .space-inner { position:absolute; inset:0; transform:translate3d(${pan.x}%,${pan.y}%,0) scale(${zoom}); transform-origin:50% 50%; transition:transform .65s cubic-bezier(.2,.8,.2,1); }
         .dust { position:absolute; border-radius:50%; background:#c4d1e1; box-shadow:0 0 8px rgba(180,205,235,.22); }
-        .axis-label { position:absolute; z-index:2; color:rgba(152,167,188,.18); font-size:7px; letter-spacing:.18em; pointer-events:none; }
-        .axis-top { top:17%; left:50%; transform:translateX(-50%); }
-        .axis-bottom { bottom:19%; left:50%; transform:translateX(-50%); }
-        .axis-left { left:6%; top:50%; transform:translateY(-50%) rotate(-90deg); }
-        .axis-right { right:6%; top:50%; transform:translateY(-50%) rotate(90deg); }
+        .axis-label { position:absolute; z-index:4; color:rgba(152,167,188,.22); font-size:7px; letter-spacing:.18em; pointer-events:none; white-space:nowrap; text-shadow:0 1px 8px rgba(0,0,0,.7); }
+        .axis-top { top:calc(46px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%); }
+        .axis-bottom { bottom:calc(88px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); }
+        .axis-left { left:7px; top:50%; transform:translateY(-50%); writing-mode:vertical-rl; }
+        .axis-right { right:7px; top:50%; transform:translateY(-50%) rotate(180deg); writing-mode:vertical-rl; }
         .star { position:absolute; transform:translate(-50%,-50%); border:0; background:transparent; padding:0; cursor:pointer; color:white; }
         .star-core { position:relative; display:block; width:var(--s); height:var(--s); border-radius:50%; background:radial-gradient(circle, #fff 0%, var(--c) 32%, color-mix(in srgb,var(--c) 55%,transparent) 60%, transparent 72%); box-shadow:0 0 calc(var(--s)*1.2) color-mix(in srgb,var(--c) 48%,transparent); opacity:var(--b); transition:width .7s,height .7s,opacity .7s,box-shadow .7s,transform .7s; }
         .star:hover .star-core, .star:active .star-core { transform:scale(1.18); }
@@ -508,11 +508,6 @@ export default function Home() {
         onWheel={e => setZoom(z => clamp(z - e.deltaY * 0.0007, .65, 2.4))}
       >
         <div className="space-inner">
-          <span className="axis-label axis-top">EVENT / FACT</span>
-          <span className="axis-label axis-bottom">REACTION / OPINION</span>
-          <span className="axis-label axis-left">LOCAL / NICHE</span>
-          <span className="axis-label axis-right">WIDESPREAD</span>
-
           {visibleUniverse?.dust.map(d => (
             <span key={d.id} className="dust" style={{ left: `${d.x * 100}%`, top: `${d.y * 100}%`, width: d.size, height: d.size, opacity: d.opacity }} />
           ))}
@@ -558,6 +553,11 @@ export default function Home() {
           {!visibleUniverse?.trends.length && <div className="empty">{loading ? "·　·　✦　·　·" : "TREND DATA NOT AVAILABLE"}</div>}
         </div>
       </div>
+
+      <span className="axis-label axis-top">EVENT / FACT</span>
+      <span className="axis-label axis-bottom">REACTION / OPINION</span>
+      <span className="axis-label axis-left">LOCAL / NICHE</span>
+      <span className="axis-label axis-right">WIDESPREAD</span>
 
       {searchMatch && <div className="search-hit">FOUND · {searchMatch.keyword}</div>}
 

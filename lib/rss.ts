@@ -8,9 +8,6 @@ export type NewsArticle = {
 };
 type FeedConfig={source:NewsArticle["source"];url:string;categoryHint?:NewsCategory;tags?:string[]};
 
-const RSS_CACHE_TTL=60_000;
-const rssCache=new Map<string,{at:number;articles:NewsArticle[]}>();
-
 export const RSS_FEEDS:FeedConfig[]=[
  {source:"FNN",url:"https://www.fnn.jp/list/feed/rss",categoryHint:"society",tags:["FNNプライムオンライン"]},
  {source:"Yahoo!ニュース",url:"https://news.yahoo.co.jp/rss/categories/world.xml",tags:["国際","外交","海外政治","世界経済","社会","科学","ライフ"]},
@@ -229,8 +226,6 @@ async function fetchHtmlFallback(config:FeedConfig,fallbackUrl:string){
   }
 }
 async function fetchFeed(config:FeedConfig){
-  const cached=rssCache.get(config.url);
-  if(cached&&Date.now()-cached.at<RSS_CACHE_TTL) return cached.articles;
   const started=Date.now();
   const controller=new AbortController();
   const timeoutMs=15000;
@@ -241,7 +236,7 @@ async function fetchFeed(config:FeedConfig){
     // fetch()ではDNS/TCP/TLSを個別には取得できないため、
     // responseHeadersMsに「DNS + TCP + TLS + 配信元サーバーの応答待ち」をまとめて記録する。
     const networkStarted=Date.now();
-    const r=await fetch(config.url,{cache:"no-store",signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1","Accept":"application/rss+xml, application/xml, text/xml, */*","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"}});
+    const r=await fetch(config.url,{next:{revalidate:60},signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1","Accept":"application/rss+xml, application/xml, text/xml, */*","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"}});
     const responseHeadersMs=Date.now()-networkStarted;
     const contentType=r.headers.get("content-type")||"";
 
@@ -259,7 +254,6 @@ async function fetchFeed(config:FeedConfig){
     const latest=latestArticles[0];
     const oldest=latestArticles[latestArticles.length-1];
     
-    rssCache.set(config.url,{at:Date.now(),articles});
     return articles;
   }catch(error){
     if(error instanceof Error && error.name==="AbortError"){
