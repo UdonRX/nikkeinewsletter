@@ -76,11 +76,60 @@ const similarity = (a: string, b: string) => {
   return hit / Math.max(1, ax.size + by.size - hit);
 };
 
-function spreadApart(trends: Trend[]) {
-  const points = trends.map(t => ({ ...t }));
-  const minX = 0.045, maxX = 0.955, minY = 0.095, maxY = 0.895;
+function layoutTrends(trends: Trend[]) {
+  // The universe has a fixed usable rectangle. Trend state decides where
+  // a star belongs inside it; no trend can push the whole field outward.
+  const X_MIN = 0.16;
+  const X_MAX = 0.84;
+  const Y_MIN = 0.16;
+  const Y_MAX = 0.84;
 
-  for (let iteration = 0; iteration < 24; iteration++) {
+  const rankMap = <T extends Trend>(items: T[], score: (t: T) => number) => {
+    const sorted = items.slice().sort((a, b) => {
+      const diff = score(a) - score(b);
+      return diff || a.id.localeCompare(b.id);
+    });
+    const map = new Map<string, number>();
+    sorted.forEach((item, index) => {
+      map.set(item.id, sorted.length <= 1 ? 0.5 : index / (sorted.length - 1));
+    });
+    return map;
+  };
+
+  const minMax = (values: number[]) => ({
+    min: Math.min(...values),
+    max: Math.max(...values),
+  });
+
+  const spreadRange = minMax(trends.map(t => t.spreadScore));
+  const natureRange = minMax(trends.map(t => t.natureScore));
+  const spreadRank = rankMap(trends, t => t.spreadScore);
+  const natureRank = rankMap(trends, t => t.natureScore);
+
+  const normalize = (value: number, min: number, max: number) =>
+    max - min < 0.0001 ? 0.5 : clamp((value - min) / (max - min));
+
+  const points = trends.map(t => {
+    // Mostly preserve the actual score, with a small rank component so
+    // identical scores do not collapse into one coordinate.
+    const spreadPosition =
+      normalize(t.spreadScore, spreadRange.min, spreadRange.max) * 0.78 +
+      (spreadRank.get(t.id) ?? 0.5) * 0.22;
+    const naturePosition =
+      (1 - normalize(t.natureScore, natureRange.min, natureRange.max)) * 0.78 +
+      (1 - (natureRank.get(t.id) ?? 0.5)) * 0.22;
+
+    return {
+      ...t,
+      x: X_MIN + spreadPosition * (X_MAX - X_MIN),
+      y: Y_MIN + naturePosition * (Y_MAX - Y_MIN),
+    };
+  });
+
+  // Only make a small local correction for collisions. The correction is
+  // strictly clamped to the same rectangle, so spacing never changes the
+  // overall universe scale.
+  for (let iteration = 0; iteration < 10; iteration++) {
     for (let i = 0; i < points.length; i++) {
       for (let j = i + 1; j < points.length; j++) {
         const a = points[i], b = points[j];
@@ -96,29 +145,20 @@ function spreadApart(trends: Trend[]) {
           distance = 0.001;
         }
 
-        const minDistance = 0.034 + Math.min(0.014, (a.size + b.size) / 2200);
+        const minDistance = 0.026 + Math.min(0.010, (a.size + b.size) / 2800);
         if (distance >= minDistance) continue;
 
-        const push = (minDistance - distance) * 0.52;
+        const push = (minDistance - distance) * 0.34;
         const nx = dx / distance, ny = dy / distance;
-        const wa = 0.72 + a.momentumScore * 0.28;
-        const wb = 0.72 + b.momentumScore * 0.28;
+        const wa = 0.8 + a.momentumScore * 0.2;
+        const wb = 0.8 + b.momentumScore * 0.2;
         const total = wa + wb;
 
-        a.x -= nx * push * (wb / total);
-        a.y -= ny * push * (wb / total);
-        b.x += nx * push * (wa / total);
-        b.y += ny * push * (wa / total);
+        a.x = clamp(a.x - nx * push * (wb / total), X_MIN, X_MAX);
+        a.y = clamp(a.y - ny * push * (wb / total), Y_MIN, Y_MAX);
+        b.x = clamp(b.x + nx * push * (wa / total), X_MIN, X_MAX);
+        b.y = clamp(b.y + ny * push * (wa / total), Y_MIN, Y_MAX);
       }
-    }
-
-    // Keep the original data-driven position as a soft anchor so this is
-    // separation, not random placement.
-    for (let i = 0; i < points.length; i++) {
-      const source = trends[i];
-      const p = points[i];
-      p.x = clamp(p.x * 0.94 + source.x * 0.06, minX, maxX);
-      p.y = clamp(p.y * 0.94 + source.y * 0.06, minY, maxY);
     }
   }
 
@@ -264,7 +304,7 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
     })
     .filter(Boolean) as Trend[];
 
-  const laidOut = spreadApart(raw);
+  const laidOut = layoutTrends(raw);
 
   const clusters: Cluster[] = [];
   const used = new Set<string>();
