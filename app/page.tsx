@@ -306,6 +306,68 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
 
   const laidOut = layoutTrends(raw);
 
+  // Send the complete layout diagnostics to the server so they appear in Vercel logs.
+  // This is intentionally separate from the normal timeline API summary log.
+  const positionDiagnostics = laidOut.map(t => {
+    const source = raw.find(r => r.id === t.id);
+    const nearest = laidOut
+      .filter(other => other.id !== t.id)
+      .map(other => ({ id: other.id, keyword: other.keyword, distance: Math.hypot(t.x - other.x, t.y - other.y) }))
+      .sort((a, b) => a.distance - b.distance)[0] || null;
+    return {
+      id: t.id,
+      keyword: t.keyword,
+      spreadScore: Number(t.spreadScore.toFixed(4)),
+      momentumScore: Number(t.momentumScore.toFixed(4)),
+      natureScore: Number(t.natureScore.toFixed(4)),
+      rawX: Number((source?.x ?? t.x).toFixed(4)),
+      rawY: Number((source?.y ?? t.y).toFixed(4)),
+      finalX: Number(t.x.toFixed(4)),
+      finalY: Number(t.y.toFixed(4)),
+      renderLeftPercent: Number((t.x * 100).toFixed(2)),
+      renderTopPercent: Number((t.y * 100).toFixed(2)),
+      size: Number(t.size.toFixed(2)),
+      nearestKeyword: nearest?.keyword || null,
+      nearestDistance: nearest ? Number(nearest.distance.toFixed(4)) : null,
+    };
+  });
+
+  const xValues = laidOut.map(t => t.x);
+  const yValues = laidOut.map(t => t.y);
+  const duplicateXY = new Map<string, number>();
+  laidOut.forEach(t => {
+    const key = `${t.x.toFixed(3)},${t.y.toFixed(3)}`;
+    duplicateXY.set(key, (duplicateXY.get(key) || 0) + 1);
+  });
+
+  void fetch("/api/emails", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      type: "trend_position_diagnostics",
+      payload: {
+        version: "fixed-field-v1",
+        bounds: { xMin: 0.16, xMax: 0.84, yMin: 0.16, yMax: 0.84 },
+        count: laidOut.length,
+        xRange: xValues.length ? [Number(Math.min(...xValues).toFixed(4)), Number(Math.max(...xValues).toFixed(4))] : [],
+        yRange: yValues.length ? [Number(Math.min(...yValues).toFixed(4)), Number(Math.max(...yValues).toFixed(4))] : [],
+        duplicateCoordinateGroups: [...duplicateXY.entries()]
+          .filter(([, count]) => count > 1)
+          .map(([coordinate, count]) => ({ coordinate, count })),
+        clusters: clusters.map(c => ({
+          id: c.id,
+          representativeKeyword: c.representativeKeyword,
+          x: Number(c.x.toFixed(4)),
+          y: Number(c.y.toFixed(4)),
+          trendCount: c.trendIds.length,
+          trendIds: c.trendIds,
+        })),
+        stars: positionDiagnostics,
+      },
+    }),
+  }).catch(() => {});
+
+
   const clusters: Cluster[] = [];
   const used = new Set<string>();
   for (const trend of laidOut) {
