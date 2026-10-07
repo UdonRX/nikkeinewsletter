@@ -106,9 +106,48 @@ export async function fetchXTrends():Promise<TrendKeyword[]>{
 }
 
 export async function fetchGoogleTrends():Promise<TrendKeyword[]>{try{const observedAt=new Date().toISOString();const doc=new JSDOM(await getText("https://trends.google.com/trending/rss?geo=JP")).window.document;const out:TrendKeyword[]=[];for(const item of Array.from(doc.querySelectorAll("item"))){const term=clean(item.querySelector("title")?.textContent||"");if(term.length<2)continue;const rank=out.length+1;const pub=item.querySelector("pubDate")?.textContent||"";const approx=item.querySelector("approx_traffic,ht\\:approx_traffic")?.textContent||"";const started=pub?new Date(pub):new Date(observedAt);const traffic=Number((approx.match(/[0-9,.]+/)||[])[0]?.replace(/,/g,"")||0);out.push({term,googleRank:rank,sources:["Google Trends"],observedAt:Number.isNaN(started.getTime())?observedAt:started.toISOString(),searchIncrease:traffic||undefined} as TrendKeyword)}const result=uniq(out.map(x=>norm(x.term))).map(k=>out.find(x=>norm(x.term)===k)!).slice(0,30);return result}catch(e){return[];}}
-function yahooTerm(raw:string){let s=clean(raw).replace(/^\d+\s*/,"").replace(/^[0-9]+位/,"").split(/急上昇|https?:\/\//i)[0].split(/[／/]/)[0].trim();const hash=s.match(/#([^\s#]+)/);if(hash)return clean(hash[1]).replace(/[！!、。,:：]+$/,"").slice(0,24);s=s.split(/(?:返信数|リポスト数|いいね数|こいつ|誰よりも|これは|なんだこれ|繰り返します|本日)/i)[0];s=s.split(/[！!。！？]/)[0];s=s.replace(/^[^\p{L}\p{N}ぁ-んァ-ヶ一-龠]+/u,"");return clean(s).slice(0,24);}
-function isMeaningfulYahooTerm(term:string){const s=clean(term);if(s.length<2||s.length>24)return false;if(/[\u{1F300}-\u{1FAFF}]/u.test(s))return false;if(/(?:えっち|セックス|裸|ポルノ|アダルト|殺す|死ね)/i.test(s))return false;const letters=(s.match(/[ぁ-んァ-ヶ一-龠A-Za-z0-9]/g)||[]).length;return letters>=3;}
-export async function fetchYahooRealtimeTrends():Promise<TrendKeyword[]>{try{const doc=new JSDOM(await getText("https://search.yahoo.co.jp/realtime/")).window.document;const out:Array<{term:string;rank:number}>=[];for(const a of Array.from(doc.querySelectorAll("a[href]"))){const raw=clean(a.textContent||"");const href=a.getAttribute("href")||"";if(!/realtime/i.test(href)||/検索|ログイン|一覧|画像|動画|ニュース|設定|ヘルプ|Yahoo!/i.test(raw))continue;const rankMatch=raw.match(/^(?:\s*)?(\d+)\s*(?:位)?/);if(!rankMatch)continue;const term=yahooTerm(raw.slice(rankMatch[0].length));if(term.length<2||term.length>40)continue;out.push({term,rank:Number(rankMatch[1])});}const map=new Map<string,{term:string;rank:number}>();for(const x of out){const k=norm(x.term);if(k&&!map.has(k))map.set(k,x);}const terms=[...map.values()].sort((a,b)=>a.rank-b.rank).slice(0,30);return terms.map(x=>({term:x.term,yahooRank:x.rank,sources:["Yahoo!リアルタイム検索"],observedAt:new Date().toISOString()}));}catch(e){return[];}}
+function yahooTermFromAnchor(anchor:HTMLAnchorElement){
+  const raw=clean(anchor.textContent||"");
+  let s=raw.replace(/^\\s*\\d+\\s*(?:位)?\\s*/,"").trim();
+  s=s.replace(/(?:\\s+)?(?:急上昇|ランキング|リアルタイム|検索結果).*/i,"").trim();
+  const hash=s.match(/#[^\\s#]+/);
+  if(hash)return clean(hash[0]).replace(/[！!、。,:：]+$/g,"").slice(0,40);
+  s=s.replace(/(?:返信数|リポスト数|いいね数)\\s*[0-9,]+.*$/i,"").trim();
+  s=s.replace(/\\s+(?:[0-9,]+(?:件|回)|[0-9]+分前|[0-9]+時間前).*$/i,"").trim();
+  s=s.replace(/^[^\\p{L}\\p{N}ぁ-んァ-ヶ一-龠#]+/u,"");
+  return clean(s).slice(0,40);
+}
+function isMeaningfulYahooTerm(term:string){
+  const s=clean(term);
+  if(s.length<2||s.length>40)return false;
+  if(/^[0-9０-９]+$/.test(s))return false;
+  if(/(?:^|\\s)(?:時点|今日|明日|昨日|木曜日|金曜日|土曜日|日曜日|月曜日|火曜日|水曜日)(?:$|\\s)/.test(s))return false;
+  if(/(?:検索|ログイン|一覧|画像|動画|ニュース|設定|ヘルプ|Yahoo!|リアルタイム検索)/i.test(s))return false;
+  const letters=(s.match(/[ぁ-んァ-ヶ一-龠A-Za-z0-9]/g)||[]).length;
+  return letters>=2;
+}
+export async function fetchYahooRealtimeTrends():Promise<TrendKeyword[]>{
+  try{
+    const doc=new JSDOM(await getText("https://search.yahoo.co.jp/realtime/")).window.document;
+    const out:Array<{term:string;rank:number}>=[];
+    for(const a of Array.from(doc.querySelectorAll("a[href]"))){
+      const href=a.getAttribute("href")||"";
+      const raw=clean(a.textContent||"");
+      if(!/realtime/i.test(href)||!raw)continue;
+      const rankMatch=raw.match(/^\\s*(\\d+)\\s*(?:位)?\\s*/);
+      if(!rankMatch)continue;
+      const rank=Number(rankMatch[1]);
+      if(rank<1||rank>30)continue;
+      const term=yahooTermFromAnchor(a);
+      if(!isMeaningfulYahooTerm(term))continue;
+      out.push({term,rank});
+    }
+    const map=new Map<string,{term:string;rank:number}>();
+    for(const x of out){const k=norm(x.term);if(k&&!map.has(k))map.set(k,x);}
+    const terms=[...map.values()].sort((a,b)=>a.rank-b.rank).slice(0,30);
+    return terms.map(x=>({term:x.term,yahooRank:x.rank,sources:["Yahoo!リアルタイム検索"],observedAt:new Date().toISOString()}));
+  }catch(e){return[];}
+}
 function merge(a:TrendKeyword[],b:TrendKeyword[],c:TrendKeyword[]=[]){const m=new Map<string,TrendKeyword>();for(const x of [...a,...b,...c]){const k=norm(x.term);if(!k)continue;const y=m.get(k);if(!y){m.set(k,{...x,sources:[...(x.sources||[])]});continue;}m.set(k,{...y,googleRank:y.googleRank??x.googleRank,yahooRank:y.yahooRank??x.yahooRank,xRank:y.xRank??x.xRank,searchIncrease:y.searchIncrease??x.searchIncrease,postCount:y.postCount??x.postCount,observedAt:y.observedAt??x.observedAt,sourceUrl:y.sourceUrl??x.sourceUrl,sources:uniq([...(y.sources||[]),...(x.sources||[])])});}return[...m.values()].filter(x=>x.term).sort((x,y)=>Math.min(x.googleRank||99,x.yahooRank||99,x.xRank||99)-Math.min(y.googleRank||99,y.yahooRank||99,y.xRank||99));}
 function diversifyTrendArticles(articles:TrendNewsArticle[]){
   const ranked=[...articles].sort((a,b)=>b.impactScore-a.impactScore||new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime());
