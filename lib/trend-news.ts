@@ -220,5 +220,5 @@ export async function collectTimelineData(nikkeiArticles:TimelineArticle[]=[]){
  const articleItems=articles.filter(a=>!eventArticleIds.has(a.id)).map(a=>({id:a.id,type:"article" as const,title:a.title,summary:a.summary,category:a.category,publishedAt:a.publishedAt,detectedAt:a.publishedAt,updatedAt:a.updatedAt,trendScore:a.trendScore||0,importanceScore:a.importanceScore||0,source:a.source,sourceUrl:a.url,imageUrl:a.imageUrl,keywords:a.keywords,relatedArticles:[a]}));
  const timeline=[...articleItems,...topics,...events].sort((a,b)=>new Date(b.detectedAt||b.publishedAt||0).getTime()-new Date(a.detectedAt||a.publishedAt||0).getTime());
  
- return{google:base.google,yahoo:base.yahoo,newsdata:nd.signals,signals:terms,articles,timeline};
+ return{google:base.google,yahoo:base.yahoo,x:base.x,newsdata:nd.signals,signals:terms,articles,timeline};
 }
