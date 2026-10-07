@@ -52,6 +52,10 @@ type Cluster = {
   size: number;
   category: string;
   relatedness: number;
+  clusterReach: number;
+  clusterMomentum: number;
+  relatedArticles: Article[];
+  relatedMediaCount: number;
 };
 
 type Universe = {
@@ -253,6 +257,57 @@ function natureScore(text: string, category = "other") {
   return clamp(lexical * 0.78 + prior * 0.22);
 }
 
+function sharedArticleScore(a: Trend, b: Trend) {
+  const aIds = new Set(a.relatedArticles.map(article => article.id));
+  const bIds = new Set(b.relatedArticles.map(article => article.id));
+  if (!aIds.size || !bIds.size) return 0;
+  let intersection = 0;
+  aIds.forEach(id => { if (bIds.has(id)) intersection++; });
+  return intersection / Math.max(1, aIds.size + bIds.size - intersection);
+}
+
+function sharedMediaScore(a: Trend, b: Trend) {
+  const aNames = new Set(a.relatedArticles.map(article => String(article.source || "").trim()).filter(Boolean));
+  const bNames = new Set(b.relatedArticles.map(article => String(article.source || "").trim()).filter(Boolean));
+  if (!aNames.size || !bNames.size) return 0;
+  let intersection = 0;
+  aNames.forEach(name => { if (bNames.has(name)) intersection++; });
+  return intersection / Math.max(1, aNames.size + bNames.size - intersection);
+}
+
+function semanticTrendSimilarity(a: Trend, b: Trend) {
+  const keywordScore = similarity(a.keyword, b.keyword);
+  const relatedKeywordScore = Math.max(
+    0,
+    ...a.relatedKeywords.map(k => similarity(k, b.keyword)),
+    ...b.relatedKeywords.map(k => similarity(a.keyword, k)),
+  );
+  const articleScore = sharedArticleScore(a, b);
+  const mediaScore = sharedMediaScore(a, b);
+  const categoryScore = a.category === b.category ? 1 : 0;
+  return clamp(
+    keywordScore * 0.42 +
+    relatedKeywordScore * 0.24 +
+    articleScore * 0.20 +
+    mediaScore * 0.06 +
+    categoryScore * 0.08
+  );
+}
+
+function clusterMemberPosition(cluster: Cluster, trend: Trend, index: number, total: number) {
+  let seed = 0;
+  for (const ch of trend.id + cluster.id) seed = (seed * 31 + ch.charCodeAt(0)) % 100000;
+  const angle = (seed / 100000) * Math.PI * 2;
+  const ring = total <= 1 ? 0 : Math.floor(index / 6);
+  const ringCount = Math.min(6, Math.max(1, total));
+  const slotAngle = angle + ((index % ringCount) / ringCount) * Math.PI * 2;
+  const radius = 0.075 + ring * 0.052 + Math.min(0.018, trend.size / 1200);
+  return {
+    x: clamp(cluster.x + Math.cos(slotAngle) * radius, 0.08, 0.92),
+    y: clamp(cluster.y + Math.sin(slotAngle) * radius, 0.10, 0.90),
+  };
+}
+
 function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
   const signals = Array.isArray(payload?.trends) ? payload.trends : [];
   const timeline = Array.isArray(payload?.timeline) ? payload.timeline : [];
@@ -437,31 +492,89 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
 
 
 
+  const adjacency = new Map<string, Set<string>>();
+  laidOut.forEach(t => adjacency.set(t.id, new Set<string>()));
+
+  for (let i = 0; i < laidOut.length; i++) {
+    for (let j = i + 1; j < laidOut.length; j++) {
+      const a = laidOut[i], b = laidOut[j];
+      if (a.category !== b.category) continue;
+      const semantic = semanticTrendSimilarity(a, b);
+      const visualDistance = Math.hypot(a.x - b.x, a.y - b.y);
+      const direct = similarity(a.keyword, b.keyword);
+      const articleBridge = sharedArticleScore(a, b);
+      const threshold = direct >= 0.72 || articleBridge >= 0.45 ? 0.30 : 0.46;
+      if (semantic >= threshold && visualDistance < 0.34) {
+        adjacency.get(a.id)?.add(b.id);
+        adjacency.get(b.id)?.add(a.id);
+      }
+    }
+  }
+
+  const visited = new Set<string>();
   const clusters: Cluster[] = [];
-  const used = new Set<string>();
-  for (const trend of laidOut) {
-    if (used.has(trend.id)) continue;
-    const members = laidOut.filter(other => {
-      if (used.has(other.id)) return false;
-      const distance = Math.hypot(trend.x - other.x, trend.y - other.y);
-      const semantic = Math.max(similarity(trend.keyword, other.keyword), trend.relatedKeywords.some(k => similarity(k, other.keyword) > 0.35) ? 0.7 : 0);
-      const categoryClose = trend.category === other.category ? 1 : 0;
-      return distance < 0.25 && semantic >= 0.34 && categoryClose >= 0.5;
-    });
-    if (members.length < 2) continue;
-    members.forEach(m => used.add(m.id));
-    const x = clamp(0.04 + (members.reduce((n, m) => n + m.x, 0) / members.length - 0.04) * 1.04, 0.04, 0.96);
-    const y = clamp(0.05 + (members.reduce((n, m) => n + m.y, 0) / members.length - 0.05) * 0.94, 0.05, 0.95);
-    const spread = members.reduce((n, m) => n + m.spreadScore, 0) / members.length;
+
+  for (const seed of laidOut) {
+    if (visited.has(seed.id)) continue;
+    const queue = [seed.id];
+    const memberIds: string[] = [];
+    visited.add(seed.id);
+
+    while (queue.length) {
+      const id = queue.shift()!;
+      memberIds.push(id);
+      for (const next of adjacency.get(id) || []) {
+        if (visited.has(next)) continue;
+        visited.add(next);
+        queue.push(next);
+      }
+    }
+
+    if (memberIds.length < 2) continue;
+    const members = memberIds.map(id => laidOut.find(t => t.id === id)).filter(Boolean) as Trend[];
+    const totalWeight = Math.max(0.001, members.reduce((sum, m) => sum + 0.35 + m.trendReach, 0));
+    const x = clamp(members.reduce((sum, m) => sum + m.x * (0.35 + m.trendReach), 0) / totalWeight, 0.08, 0.92);
+    const y = clamp(members.reduce((sum, m) => sum + m.y * (0.35 + m.trendReach), 0) / totalWeight, 0.10, 0.90);
+
+    const representative = members.map(member => {
+      const centrality = members.filter(other => other.id !== member.id)
+        .reduce((sum, other) => sum + semanticTrendSimilarity(member, other), 0) / Math.max(1, members.length - 1);
+      const coverage = clamp((member.relatedArticles.length + member.relatedMediaCount) / 16);
+      return {
+        member,
+        score: member.trendReach * 0.42 + member.trendMomentum * 0.24 + centrality * 0.22 + coverage * 0.12,
+      };
+    }).sort((a,b) => b.score - a.score)[0].member;
+
+    const relatedArticles = Array.from(
+      new Map(members.flatMap(m => m.relatedArticles).map(article => [article.id, article])).values()
+    ).sort((a,b) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime()).slice(0,12);
+    const mediaNames = new Set(relatedArticles.map(article => String(article.source || "").trim()).filter(Boolean));
+    const clusterReach = clamp(
+      members.reduce((sum,m) => sum + m.trendReach,0) / members.length * 0.62 +
+      Math.max(...members.map(m => m.trendReach)) * 0.38
+    );
+    const clusterMomentum = clamp(
+      members.reduce((sum,m) => sum + m.trendMomentum,0) / members.length * 0.58 +
+      Math.max(...members.map(m => m.trendMomentum)) * 0.42
+    );
+    const averagePairSimilarity = members.length <= 1 ? 1 : members.reduce((sum,member) => {
+      const others = members.filter(other => other.id !== member.id);
+      return sum + others.reduce((inner,other) => inner + semanticTrendSimilarity(member,other),0) / Math.max(1,others.length);
+    },0) / members.length;
+
     clusters.push({
-      id: "cluster:" + norm(trend.keyword),
-      representativeKeyword: members.slice().sort((a, b) => b.size - a.size)[0].keyword,
+      id: "cluster:" + norm(representative.keyword),
+      representativeKeyword: representative.keyword,
       trendIds: members.map(m => m.id),
-      x,
-      y,
-      size: 28 + members.length * 9 + spread * 35,
-      category: members[0].category,
-      relatedness: Math.min(1, members.length / 8),
+      x, y,
+      size: 30 + members.length * 10 + clusterReach * 42,
+      category: representative.category,
+      relatedness: clamp(averagePairSimilarity),
+      clusterReach,
+      clusterMomentum,
+      relatedArticles,
+      relatedMediaCount: mediaNames.size,
     });
   }
 
@@ -764,11 +877,16 @@ export default function Home() {
         .star { position:absolute; transform:translate(-50%,-50%); border:0; background:transparent; padding:0; cursor:pointer; color:white; }
         .star-core { position:relative; display:block; width:var(--s); height:var(--s); border-radius:50%; background:radial-gradient(circle, #fff 0%, var(--c) 32%, color-mix(in srgb,var(--c) 55%,transparent) 60%, transparent 72%); box-shadow:0 0 calc(var(--s)*1.2) color-mix(in srgb,var(--c) 48%,transparent); opacity:var(--b); transition:width .7s,height .7s,opacity .7s,box-shadow .7s,transform .7s; }
         .star:hover .star-core, .star:active .star-core { transform:scale(1.18); }
-        .cluster { position:absolute; transform:translate(-50%,-50%); border:0; background:transparent; padding:0; color:white; cursor:pointer; }
-        .cluster-cloud { position:absolute; left:50%; top:50%; width:var(--cs); height:var(--cs); transform:translate(-50%,-50%); border-radius:50%; background:radial-gradient(circle, color-mix(in srgb,var(--cc) 16%,transparent), transparent 68%); filter:blur(1px); pointer-events:none; }
-        .cluster-dot { position:absolute; width:4px; height:4px; border-radius:50%; background:var(--cc); box-shadow:0 0 8px color-mix(in srgb,var(--cc) 65%,transparent); opacity:.85; transition:transform .6s ease; }
+        .cluster { position:absolute; transform:translate(-50%,-50%); border:0; background:transparent; padding:0; color:white; cursor:pointer; width:var(--cs); height:var(--cs); }
+        .cluster-cloud { position:absolute; inset:0; border-radius:50%; background:radial-gradient(circle, color-mix(in srgb,var(--cc) 18%,transparent), transparent 66%); filter:blur(1px); pointer-events:none; }
+        .cluster-dot { position:absolute; width:4px; height:4px; border-radius:50%; background:var(--cc); box-shadow:0 0 8px color-mix(in srgb,var(--cc) 65%,transparent); opacity:.82; }
         .cluster-dot:nth-child(2){left:35%;top:40%}.cluster-dot:nth-child(3){left:58%;top:31%}.cluster-dot:nth-child(4){left:70%;top:54%}.cluster-dot:nth-child(5){left:42%;top:65%}.cluster-dot:nth-child(6){left:25%;top:55%}.cluster-dot:nth-child(7){left:54%;top:51%}
-        .cluster:active .cluster-dot { transform:scale(1.6) translate(var(--dx,0),var(--dy,0)); }
+        .cluster-system { position:absolute; z-index:12; width:1px; height:1px; transform:translate(-50%,-50%) scale(.68); opacity:0; animation:cluster-system-open .72s cubic-bezier(.2,.8,.2,1) forwards; pointer-events:none; }
+        .cluster-burst { position:absolute; left:0; top:0; width:var(--len); height:1px; transform-origin:0 50%; transform:rotate(var(--angle)) scaleX(.2); background:linear-gradient(90deg, color-mix(in srgb,var(--cc) 72%,transparent), color-mix(in srgb,var(--cc) 22%,transparent), transparent); box-shadow:0 0 7px color-mix(in srgb,var(--cc) 34%,transparent); opacity:.75; animation:cluster-burst-open .72s cubic-bezier(.2,.8,.2,1) forwards; }
+        .cluster-member-star { position:absolute; width:var(--ms); height:var(--ms); border-radius:50%; transform:translate(-50%,-50%); background:radial-gradient(circle, #fff 0%, var(--cc) 35%, transparent 74%); box-shadow:0 0 12px color-mix(in srgb,var(--cc) 52%,transparent); opacity:.9; animation:cluster-member-open .72s cubic-bezier(.2,.8,.2,1) forwards; }
+        @keyframes cluster-system-open { to { transform:translate(-50%,-50%) scale(1); opacity:1; } }
+        @keyframes cluster-burst-open { to { transform:rotate(var(--angle)) scaleX(1); } }
+        @keyframes cluster-member-open { from { opacity:0; transform:translate(-50%,-50%) scale(.2); } to { opacity:.9; transform:translate(-50%,-50%) scale(1); } }
         .hud { position:absolute; z-index:40; left:12px; right:12px; bottom:calc(78px + env(safe-area-inset-bottom)); pointer-events:none; display:flex; justify-content:center; }
         .panel { pointer-events:auto; width:min(430px,100%); max-height:56dvh; overflow:auto; border:1px solid rgba(185,201,222,.14); border-radius:20px; padding:15px; background:rgba(5,10,17,.76); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); box-shadow:0 20px 60px rgba(0,0,0,.4); }
         .panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
@@ -820,11 +938,32 @@ export default function Home() {
               className="cluster"
               style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%`, ["--cc" as any]: CATEGORY_COLORS[c.category] || CATEGORY_COLORS.other, ["--cs" as any]: `${Math.min(180, c.size)}px` }}
               onClick={e => { e.stopPropagation(); openCluster(c); }}
+              aria-label="トレンド星団"
             >
               <span className="cluster-cloud" />
               {[0,1,2,3,4,5].map(i => <span className="cluster-dot" key={i} />)}
             </button>
           ))}
+
+          {selectedCluster && viewMode === "cluster" && (() => {
+            const members = displayedTrends.filter(t => selectedCluster.trendIds.includes(t.id));
+            const bursts = Array.from({ length: Math.min(18, Math.max(8, members.length * 3)) });
+            return (
+              <div
+                className="cluster-system"
+                style={{ left: `${selectedCluster.x * 100}%`, top: `${selectedCluster.y * 100}%`, ["--cc" as any]: CATEGORY_COLORS[selectedCluster.category] || CATEGORY_COLORS.other }}
+                aria-hidden="true"
+              >
+                {bursts.map((_, i) => (
+                  <span key={`burst-${i}`} className="cluster-burst" style={{ ["--angle" as any]: `${(360 / bursts.length) * i}deg`, ["--len" as any]: `${38 + (i % 4) * 14}px` }} />
+                ))}
+                {members.map((member, index) => {
+                  const p = clusterMemberPosition(selectedCluster, member, index, members.length);
+                  return <span key={member.id} className="cluster-member-star" style={{ left: `${(p.x - selectedCluster.x) * 100}px`, top: `${(p.y - selectedCluster.y) * 100}px`, ["--ms" as any]: `${Math.max(4, Math.min(13, member.size * .7))}px` }} />;
+                })}
+              </div>
+            );
+          })()}
 
           {displayedTrends.map(t => {
             const inCluster = visibleUniverse?.clusters.some(c => c.trendIds.includes(t.id));
@@ -878,7 +1017,12 @@ export default function Home() {
             {viewMode === "cluster" && selectedCluster && (
               <>
                 <div className="panel-head"><div><div className="eyebrow">STAR CLUSTER</div><h2>{selectedCluster.representativeKeyword}</h2></div><button className="close" onClick={() => {setViewMode("universe");setSelectedCluster(null)}}>×</button></div>
-                <p className="panel-copy">同じ出来事・性質・関連度を持つトレンドが近接している星団。タップすると内部の個々の星を観測できる。</p>
+                <p className="panel-copy">意味的に結びついたトレンドを1つの星団として扱っている。中心星を軸に、関連ニュース・関連媒体・星団全体の勢いをまとめて観測できる。</p>
+                <div className="source-grid">
+                  <div className="source-cell"><span>CLUSTER REACH</span><strong>{selectedCluster.clusterReach !== undefined ? Math.round(selectedCluster.clusterReach * 100) : "—"}</strong></div>
+                  <div className="source-cell"><span>MOMENTUM</span><strong>{selectedCluster.clusterMomentum !== undefined ? Math.round(selectedCluster.clusterMomentum * 100) : "—"}</strong></div>
+                  <div className="source-cell"><span>STARS</span><strong>{selectedCluster.trendIds.length}</strong></div>
+                </div>
                 <div className="related">
                   {selectedMembers.map(t => <button key={t.id} onClick={() => openTrend(t)}>{t.keyword}<small>{categoryName(t.category)} · {t.sourceNames.join(" · ") || "source unknown"}</small></button>)}
                 </div>
