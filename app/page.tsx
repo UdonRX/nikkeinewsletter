@@ -507,7 +507,7 @@ function clusterMemberPosition(cluster: Cluster, trend: Trend, index: number, to
   };
 }
 
-function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
+function buildUniverse(payload: any, now = new Date().toISOString(), historyOverride?: Snapshot[]): Universe {
   const signals = Array.isArray(payload?.trends) ? payload.trends : [];
   const timeline = Array.isArray(payload?.timeline) ? payload.timeline : [];
   const articleByTerm = (term: string): Article[] => {
@@ -530,7 +530,7 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
     }));
   };
 
-  const previousSnapshots = readHistory();
+  const previousSnapshots = historyOverride || readHistory();
   const previousByKeyword = new Map<string, Trend>();
   for (const snapshot of previousSnapshots) {
     for (const trend of snapshot.universe?.trends || []) {
@@ -701,12 +701,67 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
     })
     .filter(Boolean) as Trend[];
 
-  const laidOut = layoutTrends(raw);
+  // Keep a short-lived fading remnant for trends that just disappeared.
+  // After several missed hourly observations the object is intentionally gone,
+  // which makes the final transition visually read as "disappearance".
+  const activeKeys = new Set(raw.map(t => norm(t.keyword)));
+  const fading = [...previousByKeyword.values()]
+    .filter(t => !activeKeys.has(norm(t.keyword)))
+    .map(t => {
+      const missingHours = Math.max(0, (new Date(now).getTime() - new Date(t.lastSeenAt).getTime()) / 3600000);
+      if (!Number.isFinite(missingHours) || missingHours <= 0 || missingHours > 3) return null;
+      const fade = clamp(1 - missingHours / 3);
+      return {
+        ...t,
+        trendReach: t.trendReach * (0.42 + fade * 0.58),
+        spreadScore: t.spreadScore * (0.42 + fade * 0.58),
+        trendMomentum: t.trendMomentum * fade,
+        momentumScore: t.momentumScore * fade,
+        size: Math.max(2.2, t.size * (0.42 + fade * 0.58)),
+        brightness: Math.max(0.08, t.brightness * fade),
+        decayRate: clamp((t.decayRate || 0.08) + (1 - fade) * 0.22),
+        lifecycle: "decay" as Trend["lifecycle"],
+        lastSeenAt: t.lastSeenAt,
+        semanticReason: { ...(t.semanticReason || {}), disappeared: true, missingHours: Number(missingHours.toFixed(2)), disappearancePhase: fade > 0.66 ? "fading" : "last-glow" },
+      } as Trend;
+    })
+    .filter(Boolean) as Trend[];
+
+  const laidOut = layoutTrends([...raw, ...fading]);
 
 
 
   const adjacency = new Map<string, Set<string>>();
   laidOut.forEach(t => adjacency.set(t.id, new Set<string>()));
+
+  // Candidate generation keeps clustering practical at 100-1000 stars.
+  // We only compare trends that share a category/token/article/media signal.
+  const candidatePairs = new Set<string>();
+  const buckets = new Map<string, string[]>();
+  const addBucket = (key: string, id: string) => {
+    if (!key) return;
+    const list = buckets.get(key) || [];
+    if (!list.includes(id)) list.push(id);
+    buckets.set(key, list);
+  };
+  for (const t of laidOut) {
+    const n = norm(t.keyword);
+    const grams = Array.from(words(n)).slice(0, 8);
+    addBucket("c:" + t.category, t.id);
+    addBucket("p:" + t.category + ":" + n.slice(0, 2), t.id);
+    grams.forEach(g => addBucket("g:" + t.category + ":" + g, t.id));
+    t.relatedKeywords.slice(0, 8).forEach(k => addBucket("r:" + t.category + ":" + norm(k).slice(0, 2), t.id));
+    t.relatedArticles.slice(0, 8).forEach(a => addBucket("a:" + a.id, t.id));
+    t.relatedArticles.map(a => String(a.source || "").trim()).filter(Boolean).slice(0, 8).forEach(m => addBucket("m:" + t.category + ":" + m, t.id));
+  }
+  for (const [key, ids] of buckets) {
+    // A whole-category bucket is too broad at scale; use it only for small categories.
+    if (key.startsWith("c:") && ids.length > 90) continue;
+    for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+      const pair = ids[i] < ids[j] ? ids[i] + "|" + ids[j] : ids[j] + "|" + ids[i];
+      candidatePairs.add(pair);
+    }
+  }
 
   // Keep the actual semantic evidence so it can be inspected in Vercel logs.
   const semanticPairDiagnostics: Array<{
@@ -723,10 +778,11 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
     linked: boolean;
   }> = [];
 
-  for (let i = 0; i < laidOut.length; i++) {
-    for (let j = i + 1; j < laidOut.length; j++) {
-      const a = laidOut[i], b = laidOut[j];
-      if (a.category !== b.category) continue;
+  for (const pair of candidatePairs) {
+      const [aId, bId] = pair.split("|");
+      const a = laidOut.find(t => t.id === aId);
+      const b = laidOut.find(t => t.id === bId);
+      if (!a || !b || a.category !== b.category) continue;
       const factors = semanticTrendFactors(a, b);
       const semantic = factors.total;
       const direct = factors.keywordScore;
@@ -764,7 +820,6 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
         adjacency.get(a.id)?.add(b.id);
         adjacency.get(b.id)?.add(a.id);
       }
-    }
   }
 
   const visited = new Set<string>();
@@ -959,8 +1014,8 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
 
 
   const dust = laidOut
-    .filter(t => t.spreadScore < 0.42)
-    .slice(0, 28)
+    .filter(t => t.spreadScore < 0.42 || (t.lifecycle === "birth" && t.trendMomentum < 0.34))
+    .slice(0, 80)
     .map((t, i) => ({
       id: "dust:" + t.id,
       x: clamp(t.x + Math.sin(i * 3.7) * 0.04),
@@ -1071,12 +1126,38 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    // iOS Safari/PWA can keep a previous JS/API response alive longer than expected.
-    // Always fetch a fresh universe when the app becomes visible/opened.
-    const old = readHistory();
-    setHistory(old);
-    setLoading(true);
-    void refresh();
+    // Restore the durable hourly history first, then fetch the live universe.
+    // Local history remains as a fallback when storage is not connected.
+    const hydrate = async () => {
+      const local = readHistory();
+      setHistory(local);
+      try {
+        const r = await fetch("/api/trend-history?hours=168", { cache: "no-store" });
+        if (r.ok) {
+          const d = await r.json();
+          const rawSnapshots = Array.isArray(d?.snapshots) ? d.snapshots : [];
+          let hydrated: Snapshot[] = [];
+          for (const item of rawSnapshots) {
+            const u = buildUniverse(item.payload || item, item.timestamp, hydrated);
+            hydrated.push({ timestamp: u.timestamp, universe: u });
+          }
+          hydrated = hydrated.slice(-168);
+          if (hydrated.length) {
+            setHistory(hydrated);
+            const latest = hydrated[hydrated.length - 1];
+            setUniverse(latest.universe);
+            setHistoryIndex(hydrated.length - 1);
+            setLive(true);
+            console.info("[TREND_UNIVERSE] durable_history_restored", { snapshots: hydrated.length, from: hydrated[0]?.timestamp, to: latest.timestamp });
+          }
+        }
+      } catch (e) {
+        console.info("[TREND_UNIVERSE] durable_history_unavailable", { reason: e instanceof Error ? e.message : "unknown" });
+      }
+      setLoading(true);
+      void refresh();
+    };
+    void hydrate();
 
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {

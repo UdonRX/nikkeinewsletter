@@ -14,7 +14,8 @@
     "react-dom": "^19.1.0",
     "jsdom": "^26.1.0",
     "dompurify": "^3.2.6",
-    "iconv-lite": "^0.7.3"
+    "iconv-lite": "^0.7.3",
+    "@vercel/blob": "^2.6.0"
   },
   "devDependencies": {
     "@types/jsdom": "^21.1.7",

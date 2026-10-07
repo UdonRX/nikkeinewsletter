@@ -1,0 +1,29 @@
+name: hourly-trend-history
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: hourly-trend-history
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Collect one hourly universe snapshot
+        env:
+          APP_URL: https://nikkeinewsletter.vercel.app
+          TREND_CRON_SECRET: ${{ secrets.TREND_CRON_SECRET }}
+        run: |
+          if [ -z "$TREND_CRON_SECRET" ]; then
+            echo "TREND_CRON_SECRET is not configured"
+            exit 1
+          fi
+          curl --fail-with-body --retry 3 --retry-delay 10 --max-time 840 \
+            -X POST "$APP_URL/api/trend-history" \
+            -H "x-trend-cron-secret: $TREND_CRON_SECRET" \
+            -H "content-type: application/json"
