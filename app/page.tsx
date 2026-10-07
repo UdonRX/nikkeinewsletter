@@ -542,11 +542,20 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
       if (a.category !== b.category) continue;
       const factors = semanticTrendFactors(a, b);
       const semantic = factors.total;
-      const visualDistance = Math.hypot(a.x - b.x, a.y - b.y);
       const direct = factors.keywordScore;
       const articleBridge = factors.articleScore;
-      const threshold = direct >= 0.72 || articleBridge >= 0.45 ? 0.30 : 0.46;
-      const linked = a.category === b.category && semantic >= threshold && visualDistance < 0.34;
+      const mediaBridge = factors.mediaScore;
+      const threshold =
+        direct >= 0.72 || articleBridge >= 0.45 ? 0.30 :
+        mediaBridge >= 0.75 ? 0.50 :
+        0.46;
+
+      // Clustering is semantic, not geometric. Screen coordinates are assigned
+      // after clustering and must never decide whether two trends belong together.
+      const linked =
+        semantic >= threshold ||
+        (articleBridge >= 0.60 && mediaBridge >= 0.50) ||
+        (direct >= 0.55 && factors.relatedKeywordScore >= 0.55);
 
       if (factors.total >= 0.30 || factors.articleScore >= 0.25 || factors.mediaScore >= 0.50) {
         semanticPairDiagnostics.push({
@@ -1000,7 +1009,8 @@ export default function Home() {
         @keyframes cluster-core-pulse { from { opacity:.2; transform:translate(-50%,-50%) scale(.5); } 35% { opacity:1; transform:translate(-50%,-50%) scale(1.25); } to { opacity:.82; transform:translate(-50%,-50%) scale(1); } }
         .cluster-system { position:absolute; z-index:25; inset:0; width:100%; height:100%; opacity:1; pointer-events:none; }
         .cluster-burst { position:absolute; left:var(--cx); top:var(--cy); width:var(--len); height:2px; transform-origin:0 50%; transform:rotate(var(--angle)) scaleX(.12); background:linear-gradient(90deg, var(--cc), rgba(255,255,255,.68), transparent); box-shadow:0 0 8px var(--cc); opacity:0; animation:cluster-burst-open .72s cubic-bezier(.2,.8,.2,1) forwards; }
-        .cluster-member-star { position:absolute; left:var(--mx); top:var(--my); width:var(--ms); height:var(--ms); border-radius:50%; transform:translate(-50%,-50%) scale(.2); background:radial-gradient(circle, #fff 0%, var(--cc) 35%, transparent 74%); box-shadow:0 0 14px var(--cc); opacity:0; animation:cluster-member-open .72s cubic-bezier(.2,.8,.2,1) forwards; }
+        .cluster-member-star { position:absolute; z-index:35; left:var(--mx); top:var(--my); width:var(--ms); height:var(--ms); padding:0; border:0; border-radius:50%; background:radial-gradient(circle, #fff 0%, var(--mc) 35%, transparent 74%); box-shadow:0 0 14px var(--mc),0 0 28px color-mix(in srgb,var(--mc) 45%,transparent); transform:translate(-50%,-50%) scale(.2); opacity:0; cursor:pointer; pointer-events:auto; animation:cluster-member-open .72s cubic-bezier(.2,.8,.2,1) forwards; }
+        .cluster-member-star:hover,.cluster-member-star:active { transform:translate(-50%,-50%) scale(1.35); }
         @keyframes cluster-burst-open { from { opacity:0; transform:rotate(var(--angle)) scaleX(.12); } to { opacity:.82; transform:rotate(var(--angle)) scaleX(1); } }
         @keyframes cluster-member-open { from { opacity:0; transform:translate(-50%,-50%) scale(.2); } to { opacity:.95; transform:translate(-50%,-50%) scale(1); } }
         .hud { position:absolute; z-index:40; left:12px; right:12px; bottom:calc(78px + env(safe-area-inset-bottom)); pointer-events:none; display:flex; justify-content:center; }
@@ -1081,7 +1091,24 @@ export default function Home() {
                 ))}
                 {members.map((member, index) => {
                   const p = clusterMemberPosition(selectedCluster, member, index, members.length);
-                  return <span key={member.id} className="cluster-member-star" style={{ ["--mx" as any]: `${p.x * 100}%`, ["--my" as any]: `${p.y * 100}%`, ["--ms" as any]: `${Math.max(5, Math.min(15, member.size * .8))}px`, animationDelay: `${80 + index * 45}ms` }} />;
+                  return (
+                    <button
+                      key={member.id}
+                      className="cluster-member-star"
+                      style={{
+                        ["--mx" as any]: p.x * 100 + "%",
+                        ["--my" as any]: p.y * 100 + "%",
+                        ["--ms" as any]: Math.max(7, Math.min(18, member.size * .95)) + "px",
+                        ["--mc" as any]: member.color,
+                        animationDelay: 80 + index * 45 + "ms",
+                      }}
+                      onPointerDown={e => e.stopPropagation()}
+                      onPointerUp={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); openTrend(member); }}
+                      aria-label={member.keyword}
+                      title={member.keyword}
+                    />
+                  );
                 })}
               </div>
             );
