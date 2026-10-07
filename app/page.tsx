@@ -31,6 +31,7 @@ type Trend = {
   peakMomentum: number;
   relatedArticles: Article[];
   relatedMediaCount: number;
+  semanticReason?: Record<string, any>;
 };
 
 type Article = {
@@ -695,6 +696,7 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
         peakMomentum,
         relatedArticles,
         relatedMediaCount: mediaNames.size,
+        semanticReason: coordinates.reason,
       } as Trend;
     })
     .filter(Boolean) as Trend[];
