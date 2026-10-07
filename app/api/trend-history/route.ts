@@ -164,7 +164,6 @@ export async function POST(req: NextRequest) {
   try {
     const data = await collectTimelineData([]);
     const payload = compactPayload(data, timestamp);
-    const pathname = PREFIX + dayKey(timestamp) + ".json";
     const current = await readHistory();
     const previous = current.at(-1);
     const lifecycle = buildServerLifecycle(payload, previous, timestamp);
