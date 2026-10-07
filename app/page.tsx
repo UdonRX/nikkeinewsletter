@@ -26,7 +26,10 @@ type Trend = {
   peakAt: string | null;
   lastSeenAt: string;
   decayRate: number;
-  lifecycle: "birth" | "growth" | "peak" | "decay" | "dormant";
+  lifecycle: "birth" | "growth" | "peak" | "decay" | "dormant" | "disappeared";
+  entityId?: string;
+  firstSeenAt?: string;
+  identityScore?: number;
   peakReach: number;
   peakMomentum: number;
   relatedArticles: Article[];
@@ -639,7 +642,9 @@ function buildUniverse(payload: any, now = new Date().toISOString(), historyOver
       ].filter(Boolean);
 
       // Lifecycle is accumulated from the same stable keyword across snapshots.
-      const previousPeakReach = previous?.peakReach ?? previousReach ?? 0;
+      const serverLifecycle = s.lifecycle as Trend["lifecycle"] | undefined;
+      const serverEntityId = s.entityId ? String(s.entityId) : undefined;
+      const previousPeakReach = Number(s.peakReach ?? previous?.peakReach ?? previousReach ?? 0);
       const previousPeakMomentum = previous?.peakMomentum ?? previousMomentum ?? 0;
       const isNew = !previous;
       const peakImproved =
@@ -658,7 +663,7 @@ function buildUniverse(payload: any, now = new Date().toISOString(), historyOver
         ? 0
         : clamp((previousMomentum - trendMomentum) / elapsedHours);
 
-      const lifecycle: Trend["lifecycle"] = isNew
+      const lifecycle: Trend["lifecycle"] = serverLifecycle || (isNew
         ? "birth"
         : trendMomentum >= Math.max(0.72, peakMomentum * 0.94)
           ? "peak"
@@ -666,10 +671,10 @@ function buildUniverse(payload: any, now = new Date().toISOString(), historyOver
             ? "decay"
             : trendReach > (previousReach ?? 0) + 0.02 || trendMomentum > (previousMomentum ?? 0) + 0.02
               ? "growth"
-              : "dormant";
+              : "dormant");
 
       return {
-        id: "trend:" + norm(keyword),
+        id: serverEntityId || "trend:" + norm(keyword),
         keyword,
         relatedKeywords: relatedWords,
         sources: { google, yahoo, x },
@@ -696,7 +701,10 @@ function buildUniverse(payload: any, now = new Date().toISOString(), historyOver
         peakMomentum,
         relatedArticles,
         relatedMediaCount: mediaNames.size,
-        semanticReason: coordinates.reason,
+        semanticReason: { ...coordinates.reason, identityScore: Number(s.identityScore || 0), serverLifecycle: serverLifecycle || null },
+        entityId: serverEntityId,
+        firstSeenAt: s.firstSeenAt || previous?.bornAt || observed,
+        identityScore: Number(s.identityScore || 0),
       } as Trend;
     })
     .filter(Boolean) as Trend[];
@@ -1203,7 +1211,13 @@ export default function Home() {
     }
   }, [searchMatch]);
 
-  const displayedTrends = visibleUniverse?.trends || [];
+  // Level-of-detail: render only the strongest 420 stars as interactive DOM at once.
+  // We keep all trends in memory/history; weak stars remain represented by clusters/dust.
+  const displayedTrends = useMemo(() => {
+    const trends = visibleUniverse?.trends || [];
+    if (trends.length <= 420) return trends;
+    return [...trends].sort((a,b) => (b.trendReach * .55 + b.trendMomentum * .35 + b.brightness * .10) - (a.trendReach * .55 + a.trendMomentum * .35 + a.brightness * .10)).slice(0,420);
+  }, [visibleUniverse]);
   useEffect(() => {
     if (!visibleUniverse) return;
     console.info("[TREND_UNIVERSE] render_ready", { trends: visibleUniverse.trends.length, clusters: visibleUniverse.clusters.length, history: history.length, historyIndex });
@@ -1284,7 +1298,19 @@ export default function Home() {
         .axis-left { left:7px; top:50%; transform:translateY(-50%); writing-mode:vertical-rl; }
         .axis-right { right:7px; top:50%; transform:translateY(-50%) rotate(180deg); writing-mode:vertical-rl; }
         .star { position:absolute; transform:translate(-50%,-50%); border:0; background:transparent; padding:0; cursor:pointer; color:white; }
-        .star-core { position:relative; display:block; width:var(--s); height:var(--s); border-radius:50%; background:radial-gradient(circle, #fff 0%, var(--c) 32%, color-mix(in srgb,var(--c) 55%,transparent) 60%, transparent 72%); box-shadow:0 0 calc(var(--s)*1.2) color-mix(in srgb,var(--c) 48%,transparent); opacity:var(--b); transition:width .7s,height .7s,opacity .7s,box-shadow .7s,transform .7s; }
+.star-core { position:relative; display:block; width:var(--s); height:var(--s); border-radius:50%; background:radial-gradient(circle, #fff 0%, var(--c) 32%, color-mix(in srgb,var(--c) 55%,transparent) 60%, transparent 72%); box-shadow:0 0 calc(var(--s)*1.2) color-mix(in srgb,var(--c) 48%,transparent); opacity:var(--b); transition:width .7s,height .7s,opacity .7s,box-shadow .7s,transform .7s; will-change:transform,opacity,width,height; }
+        .lifecycle-birth { animation:life-birth 1.6s ease-out both; }
+        .lifecycle-growth { animation:life-growth 2.4s ease-in-out infinite alternate; }
+        .lifecycle-peak { animation:life-peak 2.8s ease-in-out infinite; }
+        .lifecycle-decay { animation:life-decay 2.8s ease-in-out infinite alternate; }
+        .lifecycle-dormant { animation:life-dormant 4s ease-in-out infinite alternate; }
+        @keyframes life-birth { 0%{transform:scale(.08);opacity:0} 55%{transform:scale(1.35);opacity:1} 100%{transform:scale(1);opacity:1} }
+        @keyframes life-growth { from{transform:scale(.94);filter:brightness(.9)} to{transform:scale(1.10);filter:brightness(1.18)} }
+        @keyframes life-peak { 0%,100%{transform:scale(1);filter:brightness(1)} 50%{transform:scale(1.16);filter:brightness(1.3)} }
+        @keyframes life-decay { from{transform:scale(.98);opacity:var(--b)} to{transform:scale(.78);opacity:calc(var(--b)*.62)} }
+        @keyframes life-dormant { from{opacity:var(--b)} to{opacity:calc(var(--b)*.78)} }
+        .star[data-lifecycle="disappeared"] { animation:life-disappear 2s ease-out forwards; pointer-events:none; }
+        @keyframes life-disappear { 0%{opacity:.75;transform:scale(1)} 70%{opacity:.12;transform:scale(.35)} 100%{opacity:0;transform:scale(.05)} }
         .star:hover .star-core, .star:active .star-core { transform:scale(1.18); }
         .cluster { position:absolute; transform:translate(-50%,-50%); border:0; background:transparent; padding:0; color:white; cursor:pointer; width:var(--cs); height:var(--cs); }
         .cluster-cloud { position:absolute; inset:0; border-radius:50%; background:radial-gradient(circle, color-mix(in srgb,var(--cc) 18%,transparent), transparent 66%); filter:blur(1px); pointer-events:none; }
@@ -1408,6 +1434,7 @@ export default function Home() {
                 key={t.id}
                 className="star"
                 style={{
+                  ["data-lifecycle" as any]: t.lifecycle,
                   left: `${t.x * 100}%`,
                   top: `${t.y * 100}%`,
                   ["--s" as any]: `${Math.max(3, t.size * (active ? 1.3 : 1))}px`,
@@ -1417,7 +1444,7 @@ export default function Home() {
                 onClick={e => { e.stopPropagation(); openTrend(t); }}
                 aria-label={t.keyword}
               >
-                <span className="star-core" />
+                <span className={`star-core lifecycle-${t.lifecycle}`} />
               </button>
             );
           })}
