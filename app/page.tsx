@@ -368,12 +368,14 @@ function buildSemanticCoordinates(args: {
       articleEventEvidence: Number(relatedArticles.reduce((sum, article) => {
         const title = String(article.title || "");
         const summary = String(article.summary || "");
-        return sum + (title.match(/発表|決定|成立|開始|発生|事故|事件|地震|台風|大雨|洪水|津波|火山|噴火|警報|避難|会見|発売|合意|選挙|判決|逮捕|起訴|攻撃|災害|開幕|優勝|敗退|契約|就任|辞任|死亡|死去|負傷|発見|公開|導入|買収|提携|決算|上場|政府|首相|国会|法案|可決|承認|新サービス|新製品/g) || []).length * 2.6 + (summary.match(/発表|決定|成立|開始|発生|事故|事件|地震|台風|大雨|洪水|津波|火山|噴火|警報|避難|会見|発売|合意|選挙|判決|逮捕|起訴|攻撃|災害|開幕|優勝|敗退|契約|就任|辞任|死亡|死去|負傷|発見|公開|導入|買収|提携|決算|上場|政府|首相|国会|法案|可決|承認|新サービス|新製品/g) || []).length * 1.15);
+        const eventPattern = /発表|決定|成立|開始|発生|事故|事件|地震|台風|大雨|洪水|津波|火山|噴火|警報|避難|会見|発売|合意|選挙|判決|逮捕|起訴|攻击|攻撃|災害|開幕|優勝|敗退|契約|就任|辞任|死亡|死去|負傷|発見|公開|導入|買収|提携|決算|上場|政府|首相|国会|法案|可決|承認|新サービス|新製品/g;
+        return sum + ((title.match(eventPattern) || []).length * 2.6) + ((summary.match(eventPattern) || []).length * 1.15);
       }, 0).toFixed(2)),
       articleReactionEvidence: Number(relatedArticles.reduce((sum, article) => {
         const title = String(article.title || "");
         const summary = String(article.summary || "");
-        return sum + (title.match(/炎上|批判|反応|話題|バズ|意見|賛否|トレンド|人気|拡散|SNS|コメント|議論|口コミ|感想|騒然|歓喜|困惑|絶賛|不満|物議|大炎上|論争|ミーム|ネタ|推し|ランキング|急上昇|共感|反響|声|盛り上がり|ファン|ネット上|SNS上/g) || []).length * 2.6 + (summary.match(/炎上|批判|反応|話題|バズ|意見|賛否|トレンド|人気|拡散|SNS|コメント|議論|口コミ|感想|騒然|歓喜|困惑|絶賛|不満|物議|大炎上|論争|ミーム|ネタ|推し|ランキング|急上昇|共感|反響|声|盛り上がり|ファン|ネット上|SNS上/g) || []).length * 1.15);
+        const reactionPattern = /炎上|批判|反応|話題|バズ|意見|賛否|トレンド|人気|拡散|SNS|コメント|議論|口コミ|感想|騒然|歓喜|困惑|絶賛|不満|物議|大炎上|論争|ミーム|ネタ|推し|ランキング|急上昇|共感|反響|声|盛り上がり|ファン|ネット上|SNS上/g;
+        return sum + ((title.match(reactionPattern) || []).length * 2.6) + ((summary.match(reactionPattern) || []).length * 1.15);
       }, 0).toFixed(2)),
     },
   };
