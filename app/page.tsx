@@ -275,7 +275,7 @@ function buildSemanticCoordinates(args: {
     searchIncrease,
   } = args;
 
-  const sourceRanks = [google, yahoo, x].filter((v): v is number => Number.isFinite(v) && v > 0);
+  const sourceRanks = [google, yahoo, x].filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0);
   const sourceBreadth = sourceRanks.length / 3;
   const bestRank = sourceRanks.length ? Math.min(...sourceRanks) : 50;
   const rankBreadth = clamp((51 - Math.min(50, bestRank)) / 50);
