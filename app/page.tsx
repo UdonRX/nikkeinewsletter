@@ -881,12 +881,13 @@ export default function Home() {
         .cluster-cloud { position:absolute; inset:0; border-radius:50%; background:radial-gradient(circle, color-mix(in srgb,var(--cc) 18%,transparent), transparent 66%); filter:blur(1px); pointer-events:none; }
         .cluster-dot { position:absolute; width:4px; height:4px; border-radius:50%; background:var(--cc); box-shadow:0 0 8px color-mix(in srgb,var(--cc) 65%,transparent); opacity:.82; }
         .cluster-dot:nth-child(2){left:35%;top:40%}.cluster-dot:nth-child(3){left:58%;top:31%}.cluster-dot:nth-child(4){left:70%;top:54%}.cluster-dot:nth-child(5){left:42%;top:65%}.cluster-dot:nth-child(6){left:25%;top:55%}.cluster-dot:nth-child(7){left:54%;top:51%}
-        .cluster-system { position:absolute; z-index:12; width:1px; height:1px; transform:translate(-50%,-50%) scale(.68); opacity:0; animation:cluster-system-open .72s cubic-bezier(.2,.8,.2,1) forwards; pointer-events:none; }
-        .cluster-burst { position:absolute; left:0; top:0; width:var(--len); height:1px; transform-origin:0 50%; transform:rotate(var(--angle)) scaleX(.2); background:linear-gradient(90deg, color-mix(in srgb,var(--cc) 72%,transparent), color-mix(in srgb,var(--cc) 22%,transparent), transparent); box-shadow:0 0 7px color-mix(in srgb,var(--cc) 34%,transparent); opacity:.75; animation:cluster-burst-open .72s cubic-bezier(.2,.8,.2,1) forwards; }
-        .cluster-member-star { position:absolute; width:var(--ms); height:var(--ms); border-radius:50%; transform:translate(-50%,-50%); background:radial-gradient(circle, #fff 0%, var(--cc) 35%, transparent 74%); box-shadow:0 0 12px color-mix(in srgb,var(--cc) 52%,transparent); opacity:.9; animation:cluster-member-open .72s cubic-bezier(.2,.8,.2,1) forwards; }
-        @keyframes cluster-system-open { to { transform:translate(-50%,-50%) scale(1); opacity:1; } }
-        @keyframes cluster-burst-open { to { transform:rotate(var(--angle)) scaleX(1); } }
-        @keyframes cluster-member-open { from { opacity:0; transform:translate(-50%,-50%) scale(.2); } to { opacity:.9; transform:translate(-50%,-50%) scale(1); } }
+        .cluster-expansion-core { position:absolute; width:12px; height:12px; border-radius:50%; transform:translate(-50%,-50%); background:#fff; box-shadow:0 0 8px #fff,0 0 22px var(--cc),0 0 42px var(--cc); animation:cluster-core-pulse .72s ease-out forwards; }
+        @keyframes cluster-core-pulse { from { opacity:.2; transform:translate(-50%,-50%) scale(.5); } 35% { opacity:1; transform:translate(-50%,-50%) scale(1.25); } to { opacity:.82; transform:translate(-50%,-50%) scale(1); } }
+        .cluster-system { position:absolute; z-index:25; inset:0; width:100%; height:100%; opacity:1; pointer-events:none; }
+        .cluster-burst { position:absolute; left:var(--cx); top:var(--cy); width:var(--len); height:2px; transform-origin:0 50%; transform:rotate(var(--angle)) scaleX(.12); background:linear-gradient(90deg, var(--cc), rgba(255,255,255,.68), transparent); box-shadow:0 0 8px var(--cc); opacity:0; animation:cluster-burst-open .72s cubic-bezier(.2,.8,.2,1) forwards; }
+        .cluster-member-star { position:absolute; left:var(--mx); top:var(--my); width:var(--ms); height:var(--ms); border-radius:50%; transform:translate(-50%,-50%) scale(.2); background:radial-gradient(circle, #fff 0%, var(--cc) 35%, transparent 74%); box-shadow:0 0 14px var(--cc); opacity:0; animation:cluster-member-open .72s cubic-bezier(.2,.8,.2,1) forwards; }
+        @keyframes cluster-burst-open { from { opacity:0; transform:rotate(var(--angle)) scaleX(.12); } to { opacity:.82; transform:rotate(var(--angle)) scaleX(1); } }
+        @keyframes cluster-member-open { from { opacity:0; transform:translate(-50%,-50%) scale(.2); } to { opacity:.95; transform:translate(-50%,-50%) scale(1); } }
         .hud { position:absolute; z-index:40; left:12px; right:12px; bottom:calc(78px + env(safe-area-inset-bottom)); pointer-events:none; display:flex; justify-content:center; }
         .panel { pointer-events:auto; width:min(430px,100%); max-height:56dvh; overflow:auto; border:1px solid rgba(185,201,222,.14); border-radius:20px; padding:15px; background:rgba(5,10,17,.76); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); box-shadow:0 20px 60px rgba(0,0,0,.4); }
         .panel-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
@@ -951,15 +952,19 @@ export default function Home() {
             return (
               <div
                 className="cluster-system"
-                style={{ left: `${selectedCluster.x * 100}%`, top: `${selectedCluster.y * 100}%`, ["--cc" as any]: CATEGORY_COLORS[selectedCluster.category] || CATEGORY_COLORS.other }}
+                style={{ ["--cc" as any]: CATEGORY_COLORS[selectedCluster.category] || CATEGORY_COLORS.other }}
                 aria-hidden="true"
               >
+                <span
+                  className="cluster-expansion-core"
+                  style={{ left: `${selectedCluster.x * 100}%`, top: `${selectedCluster.y * 100}%` }}
+                />
                 {bursts.map((_, i) => (
-                  <span key={`burst-${i}`} className="cluster-burst" style={{ ["--angle" as any]: `${(360 / bursts.length) * i}deg`, ["--len" as any]: `${38 + (i % 4) * 14}px` }} />
+                  <span key={`burst-${i}`} className="cluster-burst" style={{ ["--angle" as any]: `${(360 / bursts.length) * i}deg`, ["--len" as any]: `${56 + (i % 4) * 18}px`, ["--cx" as any]: `${selectedCluster.x * 100}%`, ["--cy" as any]: `${selectedCluster.y * 100}%` }} />
                 ))}
                 {members.map((member, index) => {
                   const p = clusterMemberPosition(selectedCluster, member, index, members.length);
-                  return <span key={member.id} className="cluster-member-star" style={{ left: `${(p.x - selectedCluster.x) * 100}px`, top: `${(p.y - selectedCluster.y) * 100}px`, ["--ms" as any]: `${Math.max(4, Math.min(13, member.size * .7))}px` }} />;
+                  return <span key={member.id} className="cluster-member-star" style={{ ["--mx" as any]: `${p.x * 100}%`, ["--my" as any]: `${p.y * 100}%`, ["--ms" as any]: `${Math.max(5, Math.min(15, member.size * .8))}px`, animationDelay: `${80 + index * 45}ms` }} />;
                 })}
               </div>
             );
