@@ -153,6 +153,38 @@ export async function POST(req: NextRequest) {
   const timestamp = new Date().toISOString();
   try {
     const data = await collectTimelineData([]);
+
+    // This endpoint is called by GitHub Actions. Keep the existing Vercel
+    // diagnostics intact, and also expose the exact trend snapshot collected
+    // by the latest scheduled run so it can be inspected in Vercel logs.
+    console.log("[TREND_SOURCE_GOOGLE]", {
+      collectedAt: timestamp,
+      count: data.google.length,
+      trends: data.google.slice(0, 10).map((t: any) => ({ term: t.term, rank: t.googleRank, searchIncrease: t.searchIncrease, observedAt: t.observedAt })),
+    });
+    console.log("[TREND_SOURCE_YAHOO]", {
+      collectedAt: timestamp,
+      count: data.yahoo.length,
+      trends: data.yahoo.slice(0, 10).map((t: any) => ({ term: t.term, rank: t.yahooRank, observedAt: t.observedAt })),
+    });
+    console.log("[TREND_SOURCE_X]", {
+      collectedAt: timestamp,
+      count: data.x.length,
+      trends: data.x.slice(0, 10).map((t: any) => ({ term: t.term, rank: t.xRank, observedAt: t.observedAt })),
+    });
+    console.log("[TREND_SNAPSHOT]", {
+      collectedAt: timestamp,
+      mergedCount: data.signals.length,
+      top: data.signals.slice(0, 30).map((t: any) => ({
+        term: t.term,
+        googleRank: t.googleRank,
+        yahooRank: t.yahooRank,
+        xRank: t.xRank,
+        sources: t.sources,
+        observedAt: t.observedAt,
+      })),
+    });
+
     const payload = compactPayload(data, timestamp);
     const current = await readHistory();
     const previous = current.at(-1);
