@@ -968,7 +968,7 @@ function buildUniverse(payload: any, now = new Date().toISOString(), historyOver
       nearestDistance: nearest ? Number(nearest.distance.toFixed(4)) : null,
       placementSource: "semantic-coordinate",
       nearestKeywordUsedForPlacement: false,
-      semanticReason: source?.reason || null,
+      semanticReason: source?.semanticReason || t.semanticReason || null,
     };
   });
 
