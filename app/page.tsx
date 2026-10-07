@@ -1015,43 +1015,15 @@ export default function Home() {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      const refreshToken = Date.now().toString();
-      const r = await fetch(`/api/emails?_refresh=${refreshToken}`, {
-        cache: "no-store",
-        headers: {
-          "cache-control": "no-cache, no-store, max-age=0",
-          pragma: "no-cache",
-          "x-news-debug-id": crypto.randomUUID(),
-        },
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "universe_error");
-      const trendPayload = Array.isArray(d?.trends) ? d.trends.length : 0;
-      console.info("[TREND_UNIVERSE] fetch_complete", { debugId: d?.debug?.debugId || "unknown", trends: trendPayload, timeline: Array.isArray(d?.timeline) ? d.timeline.length : 0 });
-      const next = buildUniverse(d);
-      saveUniverse(next);
-      const nextHistory = readHistory();
-      setUniverse(next);
-      setHistory(nextHistory);
-      setHistoryIndex(-1);
-      setLive(true);
-    } catch (e) {
-      console.warn("[TREND_UNIVERSE] fetch failed", e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    // Restore the durable hourly history first, then fetch the live universe.
-    // Local history remains as a fallback when storage is not connected.
+    // The app is display-only: external trend/news collection happens exclusively
+    // through GitHub Actions -> /api/trend-history. Opening the app only reads
+    // the already stored hourly snapshots from Vercel Blob.
     const hydrate = async () => {
       const local = readHistory();
       setHistory(local);
       try {
-        const r = await fetch("/api/trend-history?hours=168", { cache: "no-store" });
+        const r = await fetch("/api/trend-history?hours=24", { cache: "no-store" });
         if (r.ok) {
           const d = await r.json();
           const rawSnapshots = Array.isArray(d?.snapshots) ? d.snapshots : [];
@@ -1060,38 +1032,47 @@ export default function Home() {
             const u = buildUniverse(item.payload || item, item.timestamp, hydrated);
             hydrated.push({ timestamp: u.timestamp, universe: u });
           }
-          hydrated = hydrated.slice(-168);
+          hydrated = hydrated.slice(-24);
           if (hydrated.length) {
             setHistory(hydrated);
             const latest = hydrated[hydrated.length - 1];
             setUniverse(latest.universe);
             setHistoryIndex(hydrated.length - 1);
             setLive(true);
-            console.info("[TREND_UNIVERSE] durable_history_restored", { snapshots: hydrated.length, from: hydrated[0]?.timestamp, to: latest.timestamp, sliderEnabled: hydrated.length > 1 });
+            console.info("[TREND_UNIVERSE] durable_history_restored", {
+              snapshots: hydrated.length,
+              from: hydrated[0]?.timestamp,
+              to: latest.timestamp,
+              sliderEnabled: hydrated.length > 1,
+              source: "github-actions-history",
+            });
+          } else if (local.length) {
+            const latest = local[local.length - 1];
+            setUniverse(latest.universe);
+            setHistoryIndex(local.length - 1);
+            setLive(true);
           }
+        } else if (local.length) {
+          const latest = local[local.length - 1];
+          setUniverse(latest.universe);
+          setHistoryIndex(local.length - 1);
+          setLive(true);
         }
       } catch (e) {
         console.warn("[TREND_UNIVERSE] durable_history_unavailable", { reason: e instanceof Error ? e.message : "unknown" });
+        if (local.length) {
+          const latest = local[local.length - 1];
+          setUniverse(latest.universe);
+          setHistoryIndex(local.length - 1);
+          setLive(true);
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(true);
-      void refresh();
     };
     void hydrate();
+  }, []);
 
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        setLoading(true);
-        void refresh();
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
-    const timer = window.setInterval(refresh, 30 * 60 * 1000);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
-  }, [refresh]);
 
   const visibleUniverse = useMemo(() => {
     if (!universe || historyIndex < 0 || history.length < 1) return universe;
