@@ -3,7 +3,7 @@ export const revalidate = 0;
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { del, get, put } from "@vercel/blob";
+import { get, put } from "@vercel/blob";
 import { collectTimelineData } from "@/lib/trend-news";
 
 const HISTORY_PATH = "trend-history/current.json";
@@ -39,7 +39,6 @@ function signalMomentum(t:any, previous:any) {
 
 type EntityState={entityId:string;canonicalKeyword:string;aliases:string[];firstSeenAt:string;lastSeenAt:string;peakAt:string|null;peakReach:number;peakMomentum:number;reach:number;momentum:number;consecutiveMisses:number;lifecycle:string};
 function resolveEntity(term:string, previous:EntityState[]) {
-  const n=normalizeTerm(term);
   let best:EntityState|null=null; let bestScore=0;
   for(const state of previous){
     const scores=[bigramSimilarity(term,state.canonicalKeyword),...state.aliases.slice(-8).map(a=>bigramSimilarity(term,a))];
@@ -83,15 +82,6 @@ type StoredSnapshot = {
   };
   entities?: EntityState[];
 };
-
-function dayKey(iso: string) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(iso));
-}
 
 function compactPayload(data: any, timestamp: string) {
   const trends = (Array.isArray(data?.signals) ? data.signals : []).map((t: any) => ({
@@ -172,18 +162,31 @@ export async function POST(req: NextRequest) {
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
       .slice(-MAX_HOURS);
     await writeHistory(next);
-    console.log("[TREND_HISTORY_LIFECYCLE]", {timestamp,entities:lifecycle.entities.length,birth:lifecycle.trends.filter((t:any)=>t.lifecycle==="birth").length,growth:lifecycle.trends.filter((t:any)=>t.lifecycle==="growth").length,peak:lifecycle.trends.filter((t:any)=>t.lifecycle==="peak").length,decay:lifecycle.trends.filter((t:any)=>t.lifecycle==="decay").length,identityMatches:lifecycle.trends.filter((t:any)=>Number(t.identityScore||0)>=.7).length,retainedHours:next.length});
-
-    console.log("[TREND_HISTORY_HOURLY]", {
+    const lifecycleCounts = lifecycle.entities.reduce<Record<string, number>>((acc, entity) => {
+      acc[entity.lifecycle] = (acc[entity.lifecycle] || 0) + 1;
+      return acc;
+    }, {});
+    const identityMatches = lifecycle.trends.filter((t: any) => Number(t.identityScore || 0) >= 0.7).length;
+    const aliasCount = lifecycle.entities.reduce((sum, entity) => sum + entity.aliases.length, 0);
+    const previousTimestamp = previous?.timestamp ? new Date(previous.timestamp).getTime() : 0;
+    console.log("[TREND_HISTORY]", {
+      status: "saved",
       timestamp,
+      previousTimestamp: previous?.timestamp || null,
+      gapMinutes: previousTimestamp ? Math.round((new Date(timestamp).getTime() - previousTimestamp) / 60000) : null,
+      snapshots: next.length,
       trends: payload.trends.length,
       timeline: payload.timeline.length,
-      snapshotsToday: next.length,
+      entities: lifecycle.entities.length,
+      lifecycle: lifecycleCounts,
+      identityMatches,
+      aliasCount,
+      retentionHours: MAX_HOURS,
       durationMs: Date.now() - started,
     });
     return NextResponse.json({ ok: true, timestamp, trends: payload.trends.length, snapshotsToday: next.length });
   } catch (e) {
-    console.error("[TREND_HISTORY_HOURLY] failed", e);
+    console.error("[TREND_HISTORY] failed", { error: e instanceof Error ? e.message : "history_collect_failed", durationMs: Date.now() - started });
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "history_collect_failed" }, { status: 502 });
   }
 }

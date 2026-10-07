@@ -771,63 +771,44 @@ function buildUniverse(payload: any, now = new Date().toISOString(), historyOver
     }
   }
 
-  // Keep the actual semantic evidence so it can be inspected in Vercel logs.
-  const semanticPairDiagnostics: Array<{
-    a: string;
-    b: string;
-    categoryMatch: boolean;
-    keywordScore: number;
-    relatedKeywordScore: number;
-    articleScore: number;
-    mediaScore: number;
-    categoryScore: number;
-    total: number;
-    threshold: number;
-    linked: boolean;
-  }> = [];
+  // Aggregate semantic evidence for diagnostics; do not retain per-pair logs.
+  let semanticPairCompared = 0;
+  let semanticPairEvidence = 0;
+  let semanticPairLinked = 0;
 
   for (const pair of candidatePairs) {
-      const [aId, bId] = pair.split("|");
-      const a = laidOut.find(t => t.id === aId);
-      const b = laidOut.find(t => t.id === bId);
-      if (!a || !b || a.category !== b.category) continue;
-      const factors = semanticTrendFactors(a, b);
-      const semantic = factors.total;
-      const direct = factors.keywordScore;
-      const articleBridge = factors.articleScore;
-      const mediaBridge = factors.mediaScore;
-      const threshold =
-        direct >= 0.72 || articleBridge >= 0.45 ? 0.30 :
-        mediaBridge >= 0.75 ? 0.50 :
-        0.46;
+    const [aId, bId] = pair.split("|");
+    const a = laidOut.find(t => t.id === aId);
+    const b = laidOut.find(t => t.id === bId);
+    if (!a || !b || a.category !== b.category) continue;
+    semanticPairCompared++;
 
-      // Clustering is semantic, not geometric. Screen coordinates are assigned
-      // after clustering and must never decide whether two trends belong together.
-      const linked =
-        semantic >= threshold ||
-        (articleBridge >= 0.60 && mediaBridge >= 0.50) ||
-        (direct >= 0.55 && factors.relatedKeywordScore >= 0.55);
+    const factors = semanticTrendFactors(a, b);
+    const semantic = factors.total;
+    const direct = factors.keywordScore;
+    const articleBridge = factors.articleScore;
+    const mediaBridge = factors.mediaScore;
+    const threshold =
+      direct >= 0.72 || articleBridge >= 0.45 ? 0.30 :
+      mediaBridge >= 0.75 ? 0.50 :
+      0.46;
 
-      if (factors.total >= 0.30 || factors.articleScore >= 0.25 || factors.mediaScore >= 0.50) {
-        semanticPairDiagnostics.push({
-          a: a.keyword,
-          b: b.keyword,
-          categoryMatch: a.category === b.category,
-          keywordScore: Number(factors.keywordScore.toFixed(3)),
-          relatedKeywordScore: Number(factors.relatedKeywordScore.toFixed(3)),
-          articleScore: Number(factors.articleScore.toFixed(3)),
-          mediaScore: Number(factors.mediaScore.toFixed(3)),
-          categoryScore: factors.categoryScore,
-          total: Number(factors.total.toFixed(3)),
-          threshold,
-          linked,
-        });
-      }
+    if (factors.total >= 0.30 || factors.articleScore >= 0.25 || factors.mediaScore >= 0.50) {
+      semanticPairEvidence++;
+    }
 
-      if (linked) {
-        adjacency.get(a.id)?.add(b.id);
-        adjacency.get(b.id)?.add(a.id);
-      }
+    const linked =
+      semantic >= threshold ||
+      (articleBridge >= 0.60 && mediaBridge >= 0.50) ||
+      (direct >= 0.55 && factors.relatedKeywordScore >= 0.55);
+
+    if (linked) semanticPairLinked++;
+
+    // Clustering is semantic, not geometric. Screen coordinates never decide membership.
+    if (linked) {
+      adjacency.get(a.id)?.add(b.id);
+      adjacency.get(b.id)?.add(a.id);
+    }
   }
 
   const visited = new Set<string>();
@@ -897,81 +878,9 @@ function buildUniverse(payload: any, now = new Date().toISOString(), historyOver
     });
   }
 
-  // Send semantic-clustering diagnostics to the server so the actual
-  // five-factor evidence and representative-star decision are visible in Vercel.
-  const semanticClusterDiagnostics = clusters.map(cluster => {
-    const members = cluster.trendIds
-      .map(id => laidOut.find(t => t.id === id))
-      .filter(Boolean) as Trend[];
-
-    const representativeCandidates = members.map(member => {
-      const centrality = members
-        .filter(other => other.id !== member.id)
-        .reduce((sum, other) => sum + semanticTrendSimilarity(member, other), 0) / Math.max(1, members.length - 1);
-      const coverage = clamp((member.relatedArticles.length + member.relatedMediaCount) / 16);
-      const score =
-        member.trendReach * 0.42 +
-        member.trendMomentum * 0.24 +
-        centrality * 0.22 +
-        coverage * 0.12;
-      return {
-        keyword: member.keyword,
-        score: Number(score.toFixed(3)),
-        reach: Number(member.trendReach.toFixed(3)),
-        momentum: Number(member.trendMomentum.toFixed(3)),
-        centrality: Number(centrality.toFixed(3)),
-        coverage: Number(coverage.toFixed(3)),
-        category: member.category,
-      };
-    }).sort((a, b) => b.score - a.score);
-
-    return {
-      id: cluster.id,
-      representativeKeyword: cluster.representativeKeyword,
-      memberCount: members.length,
-      members: members.map(m => m.keyword),
-      relatedness: Number(cluster.relatedness.toFixed(3)),
-      clusterReach: Number(cluster.clusterReach.toFixed(3)),
-      clusterMomentum: Number(cluster.clusterMomentum.toFixed(3)),
-      relatedMediaCount: cluster.relatedMediaCount,
-      representativeCandidates,
-      pairEvidence: semanticPairDiagnostics.filter(pair =>
-        members.some(m => m.keyword === pair.a) &&
-        members.some(m => m.keyword === pair.b)
-      ),
-    };
-  });
-
-  // Send the complete layout diagnostics to the server so they appear in Vercel logs.
-  // This is intentionally separate from the normal timeline API summary log.
-  const positionDiagnostics = laidOut.map(t => {
-    const source = raw.find(r => r.id === t.id);
-    const nearest = laidOut
-      .filter(other => other.id !== t.id)
-      .map(other => ({ id: other.id, keyword: other.keyword, distance: Math.hypot(t.x - other.x, t.y - other.y) }))
-      .sort((a, b) => a.distance - b.distance)[0] || null;
-    return {
-      id: t.id,
-      keyword: t.keyword,
-      spreadScore: Number(t.spreadScore.toFixed(4)),
-      momentumScore: Number(t.momentumScore.toFixed(4)),
-      interestBreadthScore: Number((t.interestBreadthScore ?? t.spreadScore).toFixed(4)),
-      eventReactionScore: Number((t.eventReactionScore ?? t.natureScore).toFixed(4)),
-      rawX: Number((source?.x ?? t.x).toFixed(4)),
-      rawY: Number((source?.y ?? t.y).toFixed(4)),
-      finalX: Number(t.x.toFixed(4)),
-      finalY: Number(t.y.toFixed(4)),
-      renderLeftPercent: Number((t.x * 100).toFixed(2)),
-      renderTopPercent: Number((t.y * 100).toFixed(2)),
-      size: Number(t.size.toFixed(2)),
-      nearestKeyword: nearest?.keyword || null,
-      nearestDistance: nearest ? Number(nearest.distance.toFixed(4)) : null,
-      placementSource: "semantic-coordinate",
-      nearestKeywordUsedForPlacement: false,
-      semanticReason: source?.semanticReason || t.semanticReason || null,
-    };
-  });
-
+  // Keep diagnostics compact: log only the aggregate signals needed to verify
+  // semantic placement and clustering. Individual stars/pairs are intentionally not
+  // sent to the server because that creates noisy, expensive logs.
   const xValues = laidOut.map(t => t.x);
   const yValues = laidOut.map(t => t.y);
   const duplicateXY = new Map<string, number>();
@@ -979,47 +888,51 @@ function buildUniverse(payload: any, now = new Date().toISOString(), historyOver
     const key = `${t.x.toFixed(3)},${t.y.toFixed(3)}`;
     duplicateXY.set(key, (duplicateXY.get(key) || 0) + 1);
   });
+  const semanticConfidence = laidOut.map(t => Number((t.semanticReason?.confidence ?? 0))).filter(Number.isFinite);
+  const eventScores = laidOut.map(t => t.eventReactionScore).filter(Number.isFinite);
+  const breadthScores = laidOut.map(t => t.interestBreadthScore).filter(Number.isFinite);
+  const lifecycleCounts = laidOut.reduce<Record<string, number>>((acc, t) => {
+    acc[t.lifecycle] = (acc[t.lifecycle] || 0) + 1;
+    return acc;
+  }, {});
+  const clusterMemberCounts = clusters.map(c => c.trendIds.length);
+  const semanticSummary = {
+    version: "semantic-coordinate-v3-evidence-breadth",
+    count: laidOut.length,
+    bounds: { xMin: 0.16, xMax: 0.84, yMin: 0.16, yMax: 0.84 },
+    xRange: xValues.length ? [Number(Math.min(...xValues).toFixed(4)), Number(Math.max(...xValues).toFixed(4))] : [],
+    yRange: yValues.length ? [Number(Math.min(...yValues).toFixed(4)), Number(Math.max(...yValues).toFixed(4))] : [],
+    duplicateCoordinateGroups: [...duplicateXY.values()].filter(count => count > 1).length,
+    semanticConfidenceAvg: semanticConfidence.length
+      ? Number((semanticConfidence.reduce((a, b) => a + b, 0) / semanticConfidence.length).toFixed(3))
+      : 0,
+    eventReactionAvg: eventScores.length
+      ? Number((eventScores.reduce((a, b) => a + b, 0) / eventScores.length).toFixed(3))
+      : 0,
+    interestBreadthAvg: breadthScores.length
+      ? Number((breadthScores.reduce((a, b) => a + b, 0) / breadthScores.length).toFixed(3))
+      : 0,
+    lifecycleCounts,
+    clusters: clusters.length,
+    clusteredStars: clusterMemberCounts.reduce((sum, n) => sum + n, 0),
+    largestCluster: clusterMemberCounts.length ? Math.max(...clusterMemberCounts) : 0,
+    semanticPairs: {
+      candidates: candidatePairs.size,
+      compared: semanticPairCompared,
+      evidence: semanticPairEvidence,
+      linked: semanticPairLinked,
+    },
+    axisSemantics: "X=LOCAL/NICHE→SOCIETY-WIDE; Y=EVENT/FACT→REACTION/OPINION",
+    placementSource: "semantic-coordinate",
+    nearestKeywordUsedForPlacement: false,
+    collisionCorrectionMax: 0.006,
+  };
 
   void fetch("/api/emails", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      type: "trend_position_diagnostics",
-      payload: {
-        version: "semantic-coordinate-v3-evidence-breadth",
-        bounds: { xMin: 0.16, xMax: 0.84, yMin: 0.16, yMax: 0.84 },
-        count: laidOut.length,
-        xRange: xValues.length ? [Number(Math.min(...xValues).toFixed(4)), Number(Math.max(...xValues).toFixed(4))] : [],
-        yRange: yValues.length ? [Number(Math.min(...yValues).toFixed(4)), Number(Math.max(...yValues).toFixed(4))] : [],
-        duplicateCoordinateGroups: [...duplicateXY.entries()]
-          .filter(([, count]) => count > 1)
-          .map(([coordinate, count]) => ({ coordinate, count })),
-        clusters: clusters.map(c => ({
-          id: c.id,
-          representativeKeyword: c.representativeKeyword,
-          x: Number(c.x.toFixed(4)),
-          y: Number(c.y.toFixed(4)),
-          trendCount: c.trendIds.length,
-          trendIds: c.trendIds,
-        })),
-        semanticClusters: semanticClusterDiagnostics,
-        semanticPairs: semanticPairDiagnostics,
-        axisSemantics: {
-          x: "interest breadth: LOCAL/NICHE -> SOCIETY-WIDE",
-          y: "event/reaction: HAPPENED -> PEOPLE'S REACTION",
-          quadrants: {
-            upperLeft: "LOCAL EVENT",
-            upperRight: "MAJOR EVENT",
-            lowerLeft: "NICHE BUZZ",
-            lowerRight: "SOCIAL BUZZ",
-          },
-          rule: "semantic scores determine coordinates; nearestKeyword is diagnostic-only; collision avoidance may only make a <=0.006 local render correction",
-        },
-        stars: positionDiagnostics,
-      },
-    }),
+    body: JSON.stringify({ type: "trend_position_diagnostics", payload: semanticSummary }),
   }).catch(() => {});
-
 
   const dust = laidOut
     .filter(t => t.spreadScore < 0.42 || (t.lifecycle === "birth" && t.trendMomentum < 0.34))
@@ -1118,14 +1031,12 @@ export default function Home() {
       const trendPayload = Array.isArray(d?.trends) ? d.trends.length : 0;
       console.info("[TREND_UNIVERSE] fetch_complete", { debugId: d?.debug?.debugId || "unknown", trends: trendPayload, timeline: Array.isArray(d?.timeline) ? d.timeline.length : 0 });
       const next = buildUniverse(d);
-      console.info("[TREND_UNIVERSE] build_complete", { trends: next.trends.length, clusters: next.clusters.length, dust: next.dust.length, timestamp: next.timestamp });
       saveUniverse(next);
       const nextHistory = readHistory();
       setUniverse(next);
       setHistory(nextHistory);
       setHistoryIndex(-1);
       setLive(true);
-      console.info("[TREND_UNIVERSE] history", { snapshots: nextHistory.length, sliderEnabled: nextHistory.length > 1 });
     } catch (e) {
       console.warn("[TREND_UNIVERSE] fetch failed", e);
     } finally {
@@ -1156,11 +1067,11 @@ export default function Home() {
             setUniverse(latest.universe);
             setHistoryIndex(hydrated.length - 1);
             setLive(true);
-            console.info("[TREND_UNIVERSE] durable_history_restored", { snapshots: hydrated.length, from: hydrated[0]?.timestamp, to: latest.timestamp });
+            console.info("[TREND_UNIVERSE] durable_history_restored", { snapshots: hydrated.length, from: hydrated[0]?.timestamp, to: latest.timestamp, sliderEnabled: hydrated.length > 1 });
           }
         }
       } catch (e) {
-        console.info("[TREND_UNIVERSE] durable_history_unavailable", { reason: e instanceof Error ? e.message : "unknown" });
+        console.warn("[TREND_UNIVERSE] durable_history_unavailable", { reason: e instanceof Error ? e.message : "unknown" });
       }
       setLoading(true);
       void refresh();
