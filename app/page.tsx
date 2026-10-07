@@ -766,7 +766,6 @@ export default function Home() {
         .star:hover .star-core, .star:active .star-core { transform:scale(1.18); }
         .cluster { position:absolute; transform:translate(-50%,-50%); border:0; background:transparent; padding:0; color:white; cursor:pointer; }
         .cluster-cloud { position:absolute; left:50%; top:50%; width:var(--cs); height:var(--cs); transform:translate(-50%,-50%); border-radius:50%; background:radial-gradient(circle, color-mix(in srgb,var(--cc) 16%,transparent), transparent 68%); filter:blur(1px); pointer-events:none; }
-        .cluster-name { position:relative; color:rgba(239,244,250,.55); font-size:8px; letter-spacing:.06em; text-shadow:0 2px 10px #000; }
         .cluster-dot { position:absolute; width:4px; height:4px; border-radius:50%; background:var(--cc); box-shadow:0 0 8px color-mix(in srgb,var(--cc) 65%,transparent); opacity:.85; transition:transform .6s ease; }
         .cluster-dot:nth-child(2){left:35%;top:40%}.cluster-dot:nth-child(3){left:58%;top:31%}.cluster-dot:nth-child(4){left:70%;top:54%}.cluster-dot:nth-child(5){left:42%;top:65%}.cluster-dot:nth-child(6){left:25%;top:55%}.cluster-dot:nth-child(7){left:54%;top:51%}
         .cluster:active .cluster-dot { transform:scale(1.6) translate(var(--dx,0),var(--dy,0)); }
@@ -824,7 +823,6 @@ export default function Home() {
             >
               <span className="cluster-cloud" />
               {[0,1,2,3,4,5].map(i => <span className="cluster-dot" key={i} />)}
-              <span className="cluster-name">{c.representativeKeyword}</span>
             </button>
           ))}
 
