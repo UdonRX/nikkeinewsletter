@@ -37,6 +37,7 @@ type Article = {
   id: string;
   title: string;
   summary?: string;
+  content?: string;
   url?: string;
   source?: string;
   category?: string;
@@ -110,9 +111,9 @@ function layoutTrends(trends: Trend[]) {
   const semanticX = new Map(points.map(t => [t.id, t.x]));
   const semanticY = new Map(points.map(t => [t.id, t.y]));
 
-  // Resolve exact visual collisions locally. Never move a star more than
-  // 1.8% of the universe width/height away from its semantic coordinate.
-  for (let iteration = 0; iteration < 8; iteration++) {
+  // Resolve only severe visual overlaps. Semantic coordinates remain dominant;
+  // collision avoidance is a tiny render correction and cannot create layout.
+  for (let iteration = 0; iteration < 4; iteration++) {
     for (let i = 0; i < points.length; i++) {
       for (let j = i + 1; j < points.length; j++) {
         const a = points[i], b = points[j];
@@ -129,10 +130,10 @@ function layoutTrends(trends: Trend[]) {
           distance = 0.001;
         }
 
-        const minDistance = 0.024 + Math.min(0.008, (a.size + b.size) / 3200);
+        const minDistance = 0.018 + Math.min(0.004, (a.size + b.size) / 5000);
         if (distance >= minDistance) continue;
 
-        const push = Math.min(0.004, (minDistance - distance) * 0.22);
+        const push = Math.min(0.0015, (minDistance - distance) * 0.12);
         const nx = dx / distance, ny = dy / distance;
         const wa = 0.8 + a.momentumScore * 0.2;
         const wb = 0.8 + b.momentumScore * 0.2;
@@ -143,10 +144,10 @@ function layoutTrends(trends: Trend[]) {
         const bx = clamp(b.x + nx * push * (wa / total), X_MIN, X_MAX);
         const by = clamp(b.y + ny * push * (wa / total), Y_MIN, Y_MAX);
 
-        a.x = clamp(ax, semanticX.get(a.id)! - 0.018, semanticX.get(a.id)! + 0.018);
-        a.y = clamp(ay, semanticY.get(a.id)! - 0.018, semanticY.get(a.id)! + 0.018);
-        b.x = clamp(bx, semanticX.get(b.id)! - 0.018, semanticX.get(b.id)! + 0.018);
-        b.y = clamp(by, semanticY.get(b.id)! - 0.018, semanticY.get(b.id)! + 0.018);
+        a.x = clamp(ax, semanticX.get(a.id)! - 0.006, semanticX.get(a.id)! + 0.006);
+        a.y = clamp(ay, semanticY.get(a.id)! - 0.006, semanticY.get(a.id)! + 0.006);
+        b.x = clamp(bx, semanticX.get(b.id)! - 0.006, semanticX.get(b.id)! + 0.006);
+        b.y = clamp(by, semanticY.get(b.id)! - 0.006, semanticY.get(b.id)! + 0.006);
         a.x = clamp(a.x, X_MIN, X_MAX);
         a.y = clamp(a.y, Y_MIN, Y_MAX);
         b.x = clamp(b.x, X_MIN, X_MAX);
@@ -209,46 +210,54 @@ function classifyCategory(text: string) {
 
 function semanticNatureScore(text: string, category = "other", articles: Article[] = []) {
   const eventTerms = [
-    "発表","発表会","発足","決定","成立","開始","再開","発生","事故","事件","地震","台風","大雨","洪水",
-    "津波","火山","噴火","警報","避難","会見","発売","合意","選挙","判決","逮捕","起訴","攻撃","災害",
-    "開幕","優勝","敗退","契約","就任","辞任","死亡","死去","負傷","発見","公開","導入","買収","提携",
-    "決算","上場","値上がり","値下がり","政府","首相","国会","法案","成立","可決","承認","調査開始",
-    "サービス開始","新サービス","新製品","発売開始","決定しました","発表しました"
+    "発表","発表会","発足","決定","決定的","成立","開始","再開","発生","発生情報","事故","事件","地震","震度",
+    "台風","大雨","洪水","津波","火山","噴火","警報","避難","会見","発売","合意","選挙","判決","逮捕","起訴",
+    "攻撃","災害","開幕","優勝","敗退","契約","就任","辞任","死亡","死去","負傷","発見","公開","導入","買収",
+    "提携","決算","上場","値上がり","値下がり","政府","首相","国会","法案","可決","承認","調査開始","調査結果",
+    "サービス開始","新サービス","新製品","発売開始","決定しました","発表しました","明らかに","判明","確定",
+    "発覚","確認","観測","発令","解除","到達","記録","更新","開催","延期","中止","移転","辞表","退任"
   ];
   const reactionTerms = [
-    "炎上","批判","反応","話題","バズ","意見","賛否","トレンド","人気","拡散","SNS","コメント",
-    "議論","口コミ","感想","騒然","歓喜","困惑","絶賛","不満","物議","大炎上","論争","ミーム",
-    "ネタ","推し","ランキング","急上昇","共感","反響","声","話題に","注目集める","注目を集める",
-    "盛り上がり","ファン","ネット上","SNS上","ネットで"
+    "炎上","批判","反応","話題","バズ","意見","賛否","トレンド","人気","拡散","SNS","コメント","議論","口コミ",
+    "感想","騒然","歓喜","困惑","絶賛","不満","物議","大炎上","論争","ミーム","ネタ","推し","ランキング","急上昇",
+    "共感","反響","声","話題に","注目集める","注目を集める","盛り上がり","ファン","ネット上","SNS上","ネットで",
+    "おめでとう","お祝い","誕生祭","入所周年","推し活","お気持ち","賛成","反対","笑った","泣いた","好き","嫌い",
+    "欲しい","ほしい","最高","最悪","かわいい","かっこいい","尊い","怖い","驚き","ショック","心配","ありがとう"
   ];
 
-  const countHits = (value: string, terms: string[]) =>
-    terms.reduce((sum, term) => sum + (value.includes(term) ? 1 : 0), 0);
+  const countWeighted = (value: string, terms: string[]) =>
+    terms.reduce((sum, term) => {
+      if (!term || !value) return sum;
+      return sum + Math.min(4, Math.max(0, value.split(term).length - 1));
+    }, 0);
 
   const scoreText = (value: string) => ({
-    event: countHits(value, eventTerms),
-    reaction: countHits(value, reactionTerms),
+    event: countWeighted(value, eventTerms),
+    reaction: countWeighted(value, reactionTerms),
   });
 
   const keywordEvidence = scoreText(text);
   let eventEvidence = keywordEvidence.event;
   let reactionEvidence = keywordEvidence.reaction;
-
-  // Article context is the strongest signal. Titles carry more weight than
-  // summaries because headlines describe what happened or how people reacted.
   let articleEventEvidence = 0;
   let articleReactionEvidence = 0;
+  let articleEventHits = 0;
+  let articleReactionHits = 0;
+
   for (const article of articles) {
     const title = String(article.title || "");
     const summary = String(article.summary || "");
+    const content = String(article.content || "");
     const categoryText = String(article.category || "");
-
     const titleScore = scoreText(title);
     const summaryScore = scoreText(summary);
+    const contentScore = scoreText(content);
     const categoryScore = scoreText(categoryText);
 
-    articleEventEvidence += titleScore.event * 2.6 + summaryScore.event * 1.15 + categoryScore.event * 0.35;
-    articleReactionEvidence += titleScore.reaction * 2.6 + summaryScore.reaction * 1.15 + categoryScore.reaction * 0.35;
+    articleEventEvidence += titleScore.event * 3.4 + contentScore.event * 2.0 + summaryScore.event * 1.5 + categoryScore.event * 0.25;
+    articleReactionEvidence += titleScore.reaction * 3.2 + contentScore.reaction * 1.9 + summaryScore.reaction * 1.45 + categoryScore.reaction * 0.25;
+    articleEventHits += titleScore.event + contentScore.event + summaryScore.event;
+    articleReactionHits += titleScore.reaction + contentScore.reaction + summaryScore.reaction;
   }
 
   eventEvidence += articleEventEvidence;
@@ -273,20 +282,53 @@ function semanticNatureScore(text: string, category = "other", articles: Article
   const totalEvidence = eventEvidence + reactionEvidence;
   const articleEvidence = articleEventEvidence + articleReactionEvidence;
 
-  // Do not collapse unknown topics to 0.5. Even when lexical evidence is
-  // sparse, the category gives a weak directional prior.
+  // Weakly evidenced topics must not all collapse to one fixed fallback.
+  const factualShape = countWeighted(text, [
+    "速報","情報","発表","決定","就任","地震","震度","警報","会見","発売","開始","開催","選挙","判決",
+    "政府","首相","国会","法案","決算","事故","事件","死亡","負傷","調査","確認","記録","更新"
+  ]);
+  const socialShape = countWeighted(text, [
+    "#","SNS","おめでとう","誕生祭","推し","ファン","反応","話題","炎上","感想","コメント","口コミ","ネタ",
+    "ミーム","トレンド","人気","おはよう","みんな","ありがとう","最高","好き","かわいい","笑"
+  ]);
+
   if (totalEvidence <= 0.01) {
-    return clamp(0.5 + (prior - 0.5) * 0.72);
+    const articleContext = clamp(articles.length / 4);
+    const shapeBalance = clamp(0.5 + (factualShape - socialShape) / Math.max(4, factualShape + socialShape + 4) * 0.34);
+    const priorBlend = prior * (0.58 - articleContext * 0.10) + 0.5 * (0.42 + articleContext * 0.10);
+    const score = clamp(priorBlend * 0.72 + shapeBalance * 0.28);
+    return {
+      score,
+      confidence: clamp((articles.length * 0.08) + (factualShape + socialShape) * 0.035),
+      eventEvidence,
+      reactionEvidence,
+      articleEventEvidence,
+      articleReactionEvidence,
+      articleEventHits,
+      articleReactionHits,
+      fallback: false,
+      mode: "weak-context",
+    };
   }
 
   const balance = (eventEvidence - reactionEvidence) / Math.max(1, totalEvidence);
-  const confidence = clamp(totalEvidence / 18);
-  const lexicalScore = 0.5 + balance * (0.43 + confidence * 0.05);
+  const confidence = clamp(totalEvidence / 24);
+  const lexicalScore = 0.5 + balance * (0.45 + confidence * 0.08);
+  const priorWeight = articleEvidence > 0 ? 0.045 : 0.16;
+  const score = clamp(lexicalScore * (1 - priorWeight) + prior * priorWeight);
 
-  // When article evidence exists, let it dominate the category prior.
-  // Without article evidence, keep a modest category correction.
-  const priorWeight = articleEvidence > 0 ? 0.07 : 0.22;
-  return clamp(lexicalScore * (1 - priorWeight) + prior * priorWeight);
+  return {
+    score,
+    confidence: clamp(confidence * 0.92 + Math.min(0.08, articles.length * 0.02)),
+    eventEvidence,
+    reactionEvidence,
+    articleEventEvidence,
+    articleReactionEvidence,
+    articleEventHits,
+    articleReactionHits,
+    fallback: false,
+    mode: articleEvidence > 0 ? "article-context" : "keyword-context",
+  };
 }
 function buildSemanticCoordinates(args: {
   keyword: string;
@@ -326,19 +368,24 @@ function buildSemanticCoordinates(args: {
 
   // Interest breadth is deliberately not trendReach. It describes how far
   // interest spreads across audiences/sources/media, not how large the star is.
-  const interestBreadthBase =
-    sourceBreadth * 0.27 +
-    rankBreadth * 0.19 +
-    mediaBreadth * 0.23 +
-    articleBreadth * 0.12 +
-    searchBreadth * 0.12 +
-    relatedBreadth * 0.07;
+  const breadthInputs: Array<{ name: string; value: number; weight: number; observed: boolean }> = [
+    { name: "sourceBreadth", value: sourceBreadth, weight: 0.27, observed: sourceRanks.length > 0 },
+    { name: "rankBreadth", value: rankBreadth, weight: 0.19, observed: sourceRanks.length > 0 },
+    { name: "mediaBreadth", value: mediaBreadth, weight: 0.23, observed: mediaNames.size > 0 },
+    { name: "articleBreadth", value: articleBreadth, weight: 0.12, observed: relatedArticles.length > 0 },
+    { name: "searchBreadth", value: searchBreadth, weight: 0.12, observed: Number.isFinite(Number(searchIncrease)) && Number(searchIncrease) > 0 },
+    { name: "relatedBreadth", value: relatedBreadth, weight: 0.07, observed: relatedKeywords.length > 0 },
+  ];
+  const observedBreadthInputs = breadthInputs.filter(x => x.observed);
+  const observedWeight = observedBreadthInputs.reduce((sum, x) => sum + x.weight, 0);
+  const interestBreadthBase = observedWeight > 0
+    ? observedBreadthInputs.reduce((sum, x) => sum + x.value * x.weight, 0) / observedWeight
+    : 0.12;
 
-  // Stretch the semantic X dimension around its midpoint. This keeps the
-  // meaning of the score intact while preventing most stars from collapsing
-  // into the left half of the universe.
+  // Expand the sparse side non-linearly while reserving the far-right edge
+  // for genuinely broad, multi-source topics.
   const interestBreadthScore = clamp(
-    0.5 + (interestBreadthBase - 0.5) * 1.55
+    0.08 + 0.92 * Math.pow(clamp(interestBreadthBase), 0.68)
   );
 
   const semanticText = [
@@ -346,10 +393,12 @@ function buildSemanticCoordinates(args: {
     ...relatedKeywords,
     ...relatedArticles.map(a => a.title),
     ...relatedArticles.map(a => a.summary || ""),
+    ...relatedArticles.map(a => a.content || ""),
     ...relatedArticles.map(a => a.category || ""),
   ].join(" ");
 
-  const eventReactionScore = semanticNatureScore(semanticText, category, relatedArticles);
+  const semanticNature = semanticNatureScore(semanticText, category, relatedArticles);
+  const eventReactionScore = semanticNature.score;
 
   return {
     interestBreadthScore,
@@ -363,20 +412,19 @@ function buildSemanticCoordinates(args: {
       articleBreadth,
       searchBreadth,
       relatedBreadth,
-      eventHits: Number((semanticText.match(/発表|決定|成立|開始|発生|事故|事件|地震|台風|大雨|洪水|津波|火山|噴火|警報|避難|会見|発売|合意|選挙|判決|逮捕|起訴|攻撃|災害|開幕|優勝|敗退|契約|就任|辞任|死亡|死去|負傷|発見|公開|導入|買収|提携|決算|上場|値上がり|値下がり|政府|首相|国会|法案|可決|承認|調査開始|サービス開始|新サービス|新製品/g) || []).length),
-      reactionHits: Number((semanticText.match(/炎上|批判|反応|話題|バズ|意見|賛否|トレンド|人気|拡散|SNS|コメント|議論|口コミ|感想|騒然|歓喜|困惑|絶賛|不満|物議|大炎上|論争|ミーム|ネタ|推し|ランキング|急上昇|共感|反響|声|盛り上がり|ファン|ネット上|SNS上/g) || []).length),
-      articleEventEvidence: Number(relatedArticles.reduce((sum, article) => {
-        const title = String(article.title || "");
-        const summary = String(article.summary || "");
-        const eventPattern = /発表|決定|成立|開始|発生|事故|事件|地震|台風|大雨|洪水|津波|火山|噴火|警報|避難|会見|発売|合意|選挙|判決|逮捕|起訴|攻击|攻撃|災害|開幕|優勝|敗退|契約|就任|辞任|死亡|死去|負傷|発見|公開|導入|買収|提携|決算|上場|政府|首相|国会|法案|可決|承認|新サービス|新製品/g;
-        return sum + ((title.match(eventPattern) || []).length * 2.6) + ((summary.match(eventPattern) || []).length * 1.15);
-      }, 0).toFixed(2)),
-      articleReactionEvidence: Number(relatedArticles.reduce((sum, article) => {
-        const title = String(article.title || "");
-        const summary = String(article.summary || "");
-        const reactionPattern = /炎上|批判|反応|話題|バズ|意見|賛否|トレンド|人気|拡散|SNS|コメント|議論|口コミ|感想|騒然|歓喜|困惑|絶賛|不満|物議|大炎上|論争|ミーム|ネタ|推し|ランキング|急上昇|共感|反響|声|盛り上がり|ファン|ネット上|SNS上/g;
-        return sum + ((title.match(reactionPattern) || []).length * 2.6) + ((summary.match(reactionPattern) || []).length * 1.15);
-      }, 0).toFixed(2)),
+      interestBreadthBase,
+      interestBreadthScore,
+      semanticConfidence: semanticNature.confidence,
+      semanticMode: semanticNature.mode,
+      eventEvidence: Number(semanticNature.eventEvidence.toFixed(3)),
+      reactionEvidence: Number(semanticNature.reactionEvidence.toFixed(3)),
+      articleEventEvidence: Number(semanticNature.articleEventEvidence.toFixed(3)),
+      articleReactionEvidence: Number(semanticNature.articleReactionEvidence.toFixed(3)),
+      articleEventHits: semanticNature.articleEventHits,
+      articleReactionHits: semanticNature.articleReactionHits,
+      fallbackUsed: semanticNature.fallback,
+      xFormula: "0.08 + 0.92 * breadthBase^0.68",
+      observedBreadthDimensions: observedBreadthInputs.map(x => x.name),
     },
   };
 }
@@ -464,14 +512,15 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
   const articleByTerm = (term: string): Article[] => {
     const related = timeline
       .filter((x: any) => {
-        const hay = [x.title, x.summary, ...(x.keywords || [])].join(" ");
+        const hay = [x.title, x.summary, x.content, x.body, x.description, ...(x.keywords || [])].join(" ");
         return similarity(hay, term) >= 0.18 || (x.keywords || []).some((k: string) => similarity(k, term) >= 0.55);
       })
       .slice(0, 8);
     return related.map((x: any) => ({
       id: String(x.id),
       title: String(x.title || ""),
-      summary: x.summary,
+      summary: x.summary || x.description,
+      content: x.content || x.body || x.description,
       url: x.sourceUrl,
       source: x.source,
       category: x.category,
@@ -852,6 +901,9 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
       size: Number(t.size.toFixed(2)),
       nearestKeyword: nearest?.keyword || null,
       nearestDistance: nearest ? Number(nearest.distance.toFixed(4)) : null,
+      placementSource: "semantic-coordinate",
+      nearestKeywordUsedForPlacement: false,
+      semanticReason: source?.reason || null,
     };
   });
 
@@ -869,7 +921,7 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
     body: JSON.stringify({
       type: "trend_position_diagnostics",
       payload: {
-        version: "semantic-coordinate-v2-context-breadth",
+        version: "semantic-coordinate-v3-evidence-breadth",
         bounds: { xMin: 0.16, xMax: 0.84, yMin: 0.16, yMax: 0.84 },
         count: laidOut.length,
         xRange: xValues.length ? [Number(Math.min(...xValues).toFixed(4)), Number(Math.max(...xValues).toFixed(4))] : [],
@@ -896,7 +948,7 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
             lowerLeft: "NICHE BUZZ",
             lowerRight: "SOCIAL BUZZ",
           },
-          rule: "semantic scores determine coordinates; collision avoidance may only make a tiny local render correction",
+          rule: "semantic scores determine coordinates; nearestKeyword is diagnostic-only; collision avoidance may only make a <=0.006 local render correction",
         },
         stars: positionDiagnostics,
       },
