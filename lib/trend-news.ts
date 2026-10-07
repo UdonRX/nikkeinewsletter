@@ -106,7 +106,7 @@ export async function fetchXTrends():Promise<TrendKeyword[]>{
 }
 
 export async function fetchGoogleTrends():Promise<TrendKeyword[]>{try{const observedAt=new Date().toISOString();const doc=new JSDOM(await getText("https://trends.google.com/trending/rss?geo=JP")).window.document;const out:TrendKeyword[]=[];for(const item of Array.from(doc.querySelectorAll("item"))){const term=clean(item.querySelector("title")?.textContent||"");if(term.length<2)continue;const rank=out.length+1;const pub=item.querySelector("pubDate")?.textContent||"";const approx=item.querySelector("approx_traffic,ht\\:approx_traffic")?.textContent||"";const started=pub?new Date(pub):new Date(observedAt);const traffic=Number((approx.match(/[0-9,.]+/)||[])[0]?.replace(/,/g,"")||0);out.push({term,googleRank:rank,sources:["Google Trends"],observedAt:Number.isNaN(started.getTime())?observedAt:started.toISOString(),searchIncrease:traffic||undefined} as TrendKeyword)}const result=uniq(out.map(x=>norm(x.term))).map(k=>out.find(x=>norm(x.term)===k)!).slice(0,30);return result}catch(e){return[];}}
-function yahooTermFromAnchor(anchor:HTMLAnchorElement){
+function yahooTermFromAnchor(anchor:Element){
   const raw=clean(anchor.textContent||"");
   let s=raw.replace(/^\\s*\\d+\\s*(?:位)?\\s*/,"").trim();
   s=s.replace(/(?:\\s+)?(?:急上昇|ランキング|リアルタイム|検索結果).*/i,"").trim();
