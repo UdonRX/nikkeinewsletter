@@ -828,7 +828,7 @@ export default function Home() {
 
           {displayedTrends.map(t => {
             const inCluster = visibleUniverse?.clusters.some(c => c.trendIds.includes(t.id));
-            if (inCluster && viewMode === "universe") return null;
+            if (inCluster) return null;
             const active = searchMatch?.id === t.id;
             return (
               <button
