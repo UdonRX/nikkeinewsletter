@@ -75,7 +75,7 @@ function buildServerLifecycle(payload:any, previousSnapshot:StoredSnapshot|undef
 }
 
 type StoredSnapshot = {
-  version: 1;
+  version: 2;
   timestamp: string;
   payload: {
     trends: any[];
