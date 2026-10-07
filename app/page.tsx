@@ -13,12 +13,13 @@ type Trend = {
   spreadScore: number;
   momentumScore: number;
   natureScore: number;
+  interestBreadthScore: number;
+  eventReactionScore: number;
   x: number;
   y: number;
   size: number;
   brightness: number;
   color: string;
-  // STEP 1: a star has independent reach, momentum, and lifecycle state.
   trendReach: number;
   trendMomentum: number;
   bornAt: string;
@@ -90,63 +91,33 @@ const similarity = (a: string, b: string) => {
 };
 
 function layoutTrends(trends: Trend[]) {
-  // The universe has a fixed usable rectangle. Trend state decides where
-  // a star belongs inside it; no trend can push the whole field outward.
+  // Semantic coordinate engine:
+  // X = interest breadth (left: local/niche -> right: society-wide)
+  // Y = event/reaction (top: happened -> bottom: people's reaction)
+  // Collision avoidance is only a tiny final render correction and never
+  // determines semantic placement or clustering.
   const X_MIN = 0.16;
   const X_MAX = 0.84;
   const Y_MIN = 0.16;
   const Y_MAX = 0.84;
 
-  const rankMap = <T extends Trend>(items: T[], score: (t: T) => number) => {
-    const sorted = items.slice().sort((a, b) => {
-      const diff = score(a) - score(b);
-      return diff || a.id.localeCompare(b.id);
-    });
-    const map = new Map<string, number>();
-    sorted.forEach((item, index) => {
-      map.set(item.id, sorted.length <= 1 ? 0.5 : index / (sorted.length - 1));
-    });
-    return map;
-  };
+  const points = trends.map(t => ({
+    ...t,
+    x: X_MIN + clamp(t.interestBreadthScore) * (X_MAX - X_MIN),
+    y: Y_MAX - clamp(t.eventReactionScore) * (Y_MAX - Y_MIN),
+  }));
 
-  const minMax = (values: number[]) => ({
-    min: Math.min(...values),
-    max: Math.max(...values),
-  });
+  const semanticX = new Map(points.map(t => [t.id, t.x]));
+  const semanticY = new Map(points.map(t => [t.id, t.y]));
 
-  const spreadRange = minMax(trends.map(t => t.spreadScore));
-  const natureRange = minMax(trends.map(t => t.natureScore));
-  const spreadRank = rankMap(trends, t => t.spreadScore);
-  const natureRank = rankMap(trends, t => t.natureScore);
-
-  const normalize = (value: number, min: number, max: number) =>
-    max - min < 0.0001 ? 0.5 : clamp((value - min) / (max - min));
-
-  const points = trends.map(t => {
-    // Mostly preserve the actual score, with a small rank component so
-    // identical scores do not collapse into one coordinate.
-    const spreadPosition =
-      normalize(t.spreadScore, spreadRange.min, spreadRange.max) * 0.78 +
-      (spreadRank.get(t.id) ?? 0.5) * 0.22;
-    const naturePosition =
-      (1 - normalize(t.natureScore, natureRange.min, natureRange.max)) * 0.78 +
-      (1 - (natureRank.get(t.id) ?? 0.5)) * 0.22;
-
-    return {
-      ...t,
-      x: X_MIN + spreadPosition * (X_MAX - X_MIN),
-      y: Y_MIN + naturePosition * (Y_MAX - Y_MIN),
-    };
-  });
-
-  // Only make a small local correction for collisions. The correction is
-  // strictly clamped to the same rectangle, so spacing never changes the
-  // overall universe scale.
-  for (let iteration = 0; iteration < 10; iteration++) {
+  // Resolve exact visual collisions locally. Never move a star more than
+  // 1.8% of the universe width/height away from its semantic coordinate.
+  for (let iteration = 0; iteration < 8; iteration++) {
     for (let i = 0; i < points.length; i++) {
       for (let j = i + 1; j < points.length; j++) {
         const a = points[i], b = points[j];
-        let dx = b.x - a.x, dy = b.y - a.y;
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
         let distance = Math.hypot(dx, dy);
 
         if (distance < 0.0001) {
@@ -158,19 +129,28 @@ function layoutTrends(trends: Trend[]) {
           distance = 0.001;
         }
 
-        const minDistance = 0.026 + Math.min(0.010, (a.size + b.size) / 2800);
+        const minDistance = 0.024 + Math.min(0.008, (a.size + b.size) / 3200);
         if (distance >= minDistance) continue;
 
-        const push = (minDistance - distance) * 0.34;
+        const push = Math.min(0.004, (minDistance - distance) * 0.22);
         const nx = dx / distance, ny = dy / distance;
         const wa = 0.8 + a.momentumScore * 0.2;
         const wb = 0.8 + b.momentumScore * 0.2;
         const total = wa + wb;
 
-        a.x = clamp(a.x - nx * push * (wb / total), X_MIN, X_MAX);
-        a.y = clamp(a.y - ny * push * (wb / total), Y_MIN, Y_MAX);
-        b.x = clamp(b.x + nx * push * (wa / total), X_MIN, X_MAX);
-        b.y = clamp(b.y + ny * push * (wa / total), Y_MIN, Y_MAX);
+        const ax = clamp(a.x - nx * push * (wb / total), X_MIN, X_MAX);
+        const ay = clamp(a.y - ny * push * (wb / total), Y_MIN, Y_MAX);
+        const bx = clamp(b.x + nx * push * (wa / total), X_MIN, X_MAX);
+        const by = clamp(b.y + ny * push * (wa / total), Y_MIN, Y_MAX);
+
+        a.x = clamp(ax, semanticX.get(a.id)! - 0.018, semanticX.get(a.id)! + 0.018);
+        a.y = clamp(ay, semanticY.get(a.id)! - 0.018, semanticY.get(a.id)! + 0.018);
+        b.x = clamp(bx, semanticX.get(b.id)! - 0.018, semanticX.get(b.id)! + 0.018);
+        b.y = clamp(by, semanticY.get(b.id)! - 0.018, semanticY.get(b.id)! + 0.018);
+        a.x = clamp(a.x, X_MIN, X_MAX);
+        a.y = clamp(a.y, Y_MIN, Y_MAX);
+        b.x = clamp(b.x, X_MIN, X_MAX);
+        b.y = clamp(b.y, Y_MIN, Y_MAX);
       }
     }
   }
@@ -227,34 +207,126 @@ function classifyCategory(text: string) {
   return "other";
 }
 
-function natureScore(text: string, category = "other") {
-  const event = (text.match(/発表|発表会|決定|成立|開始|発生|事故|地震|台風|会見|発売|合意|選挙|判決|逮捕|攻撃|災害|開幕|優勝|契約|就任|辞任|死亡|負傷|発見|公開|導入|買収|提携|決算|上場|値上がり|値下がり/g) || []).length;
-  const reaction = (text.match(/炎上|批判|反応|話題|バズ|意見|賛否|トレンド|人気|拡散|SNS|コメント|議論|口コミ|感想|騒然|歓喜|困惑|絶賛|不満|物議/g) || []).length;
+function semanticNatureScore(text: string, category = "other") {
+  const eventTerms = [
+    "発表","発表会","決定","成立","開始","発生","事故","地震","台風","大雨","洪水",
+    "津波","火山","会見","発売","合意","選挙","判決","逮捕","攻撃","災害","開幕",
+    "優勝","契約","就任","辞任","死亡","負傷","発見","公開","導入","買収","提携",
+    "決算","上場","値上がり","値下がり","政府","首相","国会","法案","地震","台風"
+  ];
+  const reactionTerms = [
+    "炎上","批判","反応","話題","バズ","意見","賛否","トレンド","人気","拡散","SNS",
+    "コメント","議論","口コミ","感想","騒然","歓喜","困惑","絶賛","不満","物議",
+    "大炎上","論争","ミーム","ネタ","推し","ランキング","急上昇"
+  ];
 
-  // A bare trend term often contains no explicit event/reaction word.
-  // Use the topic category as a weak prior only in that case, so the Y axis
-  // still represents topic nature instead of collapsing every term to 0.5.
-  const categoryPrior: Record<string, number> = {
-    politics: 0.76,
+  const countHits = (terms: string[]) =>
+    terms.reduce((sum, term) => sum + (text.includes(term) ? 1 : 0), 0);
+
+  const eventHits = countHits(eventTerms);
+  const reactionHits = countHits(reactionTerms);
+
+  // A weak category prior only fills gaps when lexical evidence is sparse.
+  const eventPrior: Record<string, number> = {
+    politics: 0.82,
     economy: 0.70,
     market: 0.68,
-    international: 0.72,
-    disaster: 0.84,
-    science: 0.80,
-    technology: 0.63,
-    society: 0.61,
+    international: 0.76,
+    disaster: 0.92,
+    science: 0.82,
+    technology: 0.64,
+    society: 0.62,
     sports: 0.55,
-    entertainment: 0.43,
+    entertainment: 0.42,
     life: 0.50,
     other: 0.50,
   };
 
-  const prior = categoryPrior[category] ?? 0.5;
-  const lexical = clamp(0.5 + (event - reaction) * 0.12);
-  if (event === 0 && reaction === 0) return prior;
+  const prior = eventPrior[category] ?? 0.5;
+  const lexicalTotal = eventHits + reactionHits;
+  if (lexicalTotal === 0) return prior;
 
-  // Lexical evidence is stronger than the category prior.
-  return clamp(lexical * 0.78 + prior * 0.22);
+  const lexicalEvent = clamp(
+    0.5 + (eventHits - reactionHits) / Math.max(2, lexicalTotal) * 0.5
+  );
+
+  // Article context is intentionally dominant; category is only a weak prior.
+  return clamp(lexicalEvent * 0.84 + prior * 0.16);
+}
+
+function buildSemanticCoordinates(args: {
+  keyword: string;
+  relatedKeywords: string[];
+  relatedArticles: Article[];
+  category: string;
+  google?: number;
+  yahoo?: number;
+  x?: number;
+  searchIncrease?: number;
+}) {
+  const {
+    keyword,
+    relatedKeywords,
+    relatedArticles,
+    category,
+    google,
+    yahoo,
+    x,
+    searchIncrease,
+  } = args;
+
+  const sourceRanks = [google, yahoo, x].filter((v): v is number => Number.isFinite(v) && v > 0);
+  const sourceBreadth = sourceRanks.length / 3;
+  const bestRank = sourceRanks.length ? Math.min(...sourceRanks) : 50;
+  const rankBreadth = clamp((51 - Math.min(50, bestRank)) / 50);
+
+  const mediaNames = new Set(
+    relatedArticles.map(a => String(a.source || "").trim()).filter(Boolean)
+  );
+  const mediaBreadth = clamp(mediaNames.size / 6);
+  const articleBreadth = clamp(relatedArticles.length / 8);
+  const searchBreadth = Number.isFinite(Number(searchIncrease))
+    ? clamp(Math.log10(Math.max(1, Number(searchIncrease))) / 6)
+    : 0;
+  const relatedBreadth = clamp(relatedKeywords.length / 6);
+
+  // Interest breadth is deliberately not trendReach. It describes how far
+  // interest spreads across audiences/sources/media, not how large the star is.
+  const interestBreadthScore = clamp(
+    sourceBreadth * 0.24 +
+    rankBreadth * 0.18 +
+    mediaBreadth * 0.22 +
+    articleBreadth * 0.14 +
+    searchBreadth * 0.14 +
+    relatedBreadth * 0.08
+  );
+
+  const semanticText = [
+    keyword,
+    ...relatedKeywords,
+    ...relatedArticles.map(a => a.title),
+    ...relatedArticles.map(a => a.summary || ""),
+    ...relatedArticles.map(a => a.category || ""),
+  ].join(" ");
+
+  const eventReactionScore = semanticNatureScore(semanticText, category);
+
+  return {
+    interestBreadthScore,
+    eventReactionScore,
+    x: interestBreadthScore,
+    y: eventReactionScore,
+    reason: {
+      sourceBreadth,
+      rankBreadth,
+      mediaBreadth,
+      articleBreadth,
+      searchBreadth,
+      relatedBreadth,
+      eventHits: Number((semanticText.match(/発表|決定|成立|開始|発生|事故|地震|台風|大雨|洪水|津波|火山|会見|発売|合意|選挙|判決|逮捕|攻撃|災害|開幕|優勝|契約|就任|辞任|死亡|負傷|発見|公開|導入|買収|提携|決算|上場|値上がり|値下がり/g) || []).length),
+      reactionHits: Number((semanticText.match(/炎上|批判|反応|話題|バズ|意見|賛否|トレンド|人気|拡散|SNS|コメント|議論|口コミ|感想|騒然|歓喜|困惑|絶賛|不満|物議|大炎上|論争|ミーム|ネタ|推し|ランキング|急上昇/g) || []).length),
+    },
+  };
 }
 
 function sharedArticleScore(a: Trend, b: Trend) {
@@ -441,9 +513,19 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
         .filter((q: string) => q && q !== keyword && similarity(keyword, q) >= 0.28)
         .slice(0, 8);
       const category = classifyCategory(text);
-      const nature = natureScore(text, category);
-      const y = 0.08 + Math.pow(1 - nature, 0.82) * 0.84;
-      const xPos = 0.06 + Math.pow(trendReach, 0.82) * 0.88;
+      const coordinates = buildSemanticCoordinates({
+        keyword,
+        relatedKeywords: relatedWords,
+        relatedArticles,
+        category,
+        google,
+        yahoo,
+        x,
+        searchIncrease: Number(s.searchIncrease),
+      });
+      const nature = coordinates.eventReactionScore;
+      const y = nature;
+      const xPos = coordinates.interestBreadthScore;
 
       // Size follows reach; brightness follows momentum.
       const size = 3.5 + trendReach * 15 + (sourceCount >= 3 ? 2.5 : 0);
@@ -496,6 +578,8 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
         trendReach,
         trendMomentum,
         natureScore: nature,
+        interestBreadthScore: coordinates.interestBreadthScore,
+        eventReactionScore: coordinates.eventReactionScore,
         x: xPos,
         y,
         size,
@@ -705,7 +789,8 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
       keyword: t.keyword,
       spreadScore: Number(t.spreadScore.toFixed(4)),
       momentumScore: Number(t.momentumScore.toFixed(4)),
-      natureScore: Number(t.natureScore.toFixed(4)),
+      interestBreadthScore: Number((t.interestBreadthScore ?? t.spreadScore).toFixed(4)),
+      eventReactionScore: Number((t.eventReactionScore ?? t.natureScore).toFixed(4)),
       rawX: Number((source?.x ?? t.x).toFixed(4)),
       rawY: Number((source?.y ?? t.y).toFixed(4)),
       finalX: Number(t.x.toFixed(4)),
@@ -732,7 +817,7 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
     body: JSON.stringify({
       type: "trend_position_diagnostics",
       payload: {
-        version: "fixed-field-v1",
+        version: "semantic-coordinate-v1",
         bounds: { xMin: 0.16, xMax: 0.84, yMin: 0.16, yMax: 0.84 },
         count: laidOut.length,
         xRange: xValues.length ? [Number(Math.min(...xValues).toFixed(4)), Number(Math.max(...xValues).toFixed(4))] : [],
@@ -750,6 +835,17 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
         })),
         semanticClusters: semanticClusterDiagnostics,
         semanticPairs: semanticPairDiagnostics,
+        axisSemantics: {
+          x: "interest breadth: LOCAL/NICHE -> SOCIETY-WIDE",
+          y: "event/reaction: HAPPENED -> PEOPLE'S REACTION",
+          quadrants: {
+            upperLeft: "LOCAL EVENT",
+            upperRight: "MAJOR EVENT",
+            lowerLeft: "NICHE BUZZ",
+            lowerRight: "SOCIAL BUZZ",
+          },
+          rule: "semantic scores determine coordinates; collision avoidance may only make a tiny local render correction",
+        },
         stars: positionDiagnostics,
       },
     }),
@@ -804,6 +900,8 @@ function interpolate(a: Universe, b: Universe, at: number): Universe {
       ...t,
       x: t.x + (other.x - t.x) * at,
       y: t.y + (other.y - t.y) * at,
+      interestBreadthScore: (t.interestBreadthScore ?? t.spreadScore) + ((other.interestBreadthScore ?? other.spreadScore) - (t.interestBreadthScore ?? t.spreadScore)) * at,
+      eventReactionScore: (t.eventReactionScore ?? t.natureScore) + ((other.eventReactionScore ?? other.natureScore) - (t.eventReactionScore ?? t.natureScore)) * at,
       size: t.size + (other.size - t.size) * at,
       brightness: t.brightness + (other.brightness - t.brightness) * at,
       spreadScore: t.spreadScore + (other.spreadScore - t.spreadScore) * at,
