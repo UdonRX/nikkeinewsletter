@@ -23,6 +23,12 @@ export async function POST(req:NextRequest){
       clusters:p.clusters,
       stars:p.stars
     });
+    console.log("[TREND_CLUSTER_DIAGNOSTICS]", {
+      clusterCount: Array.isArray(p.semanticClusters) ? p.semanticClusters.length : 0,
+      clusters: p.semanticClusters || [],
+      semanticPairCount: Array.isArray(p.semanticPairs) ? p.semanticPairs.length : 0,
+      semanticPairs: p.semanticPairs || [],
+    });
     return NextResponse.json({ok:true});
   }catch(e){
     return NextResponse.json({ok:false,error:e instanceof Error?e.message:"diagnostic_error"},{status:400});

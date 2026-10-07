@@ -294,6 +294,32 @@ function semanticTrendSimilarity(a: Trend, b: Trend) {
   );
 }
 
+function semanticTrendFactors(a: Trend, b: Trend) {
+  const keywordScore = similarity(a.keyword, b.keyword);
+  const relatedKeywordScore = Math.max(
+    0,
+    ...a.relatedKeywords.map(k => similarity(k, b.keyword)),
+    ...b.relatedKeywords.map(k => similarity(a.keyword, k)),
+  );
+  const articleScore = sharedArticleScore(a, b);
+  const mediaScore = sharedMediaScore(a, b);
+  const categoryScore = a.category === b.category ? 1 : 0;
+  return {
+    keywordScore,
+    relatedKeywordScore,
+    articleScore,
+    mediaScore,
+    categoryScore,
+    total: clamp(
+      keywordScore * 0.42 +
+      relatedKeywordScore * 0.24 +
+      articleScore * 0.20 +
+      mediaScore * 0.06 +
+      categoryScore * 0.08
+    ),
+  };
+}
+
 function clusterMemberPosition(cluster: Cluster, trend: Trend, index: number, total: number) {
   let seed = 0;
   for (const ch of trend.id + cluster.id) seed = (seed * 31 + ch.charCodeAt(0)) % 100000;
@@ -495,16 +521,50 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
   const adjacency = new Map<string, Set<string>>();
   laidOut.forEach(t => adjacency.set(t.id, new Set<string>()));
 
+  // Keep the actual semantic evidence so it can be inspected in Vercel logs.
+  const semanticPairDiagnostics: Array<{
+    a: string;
+    b: string;
+    categoryMatch: boolean;
+    keywordScore: number;
+    relatedKeywordScore: number;
+    articleScore: number;
+    mediaScore: number;
+    categoryScore: number;
+    total: number;
+    threshold: number;
+    linked: boolean;
+  }> = [];
+
   for (let i = 0; i < laidOut.length; i++) {
     for (let j = i + 1; j < laidOut.length; j++) {
       const a = laidOut[i], b = laidOut[j];
       if (a.category !== b.category) continue;
-      const semantic = semanticTrendSimilarity(a, b);
+      const factors = semanticTrendFactors(a, b);
+      const semantic = factors.total;
       const visualDistance = Math.hypot(a.x - b.x, a.y - b.y);
-      const direct = similarity(a.keyword, b.keyword);
-      const articleBridge = sharedArticleScore(a, b);
+      const direct = factors.keywordScore;
+      const articleBridge = factors.articleScore;
       const threshold = direct >= 0.72 || articleBridge >= 0.45 ? 0.30 : 0.46;
-      if (semantic >= threshold && visualDistance < 0.34) {
+      const linked = a.category === b.category && semantic >= threshold && visualDistance < 0.34;
+
+      if (factors.total >= 0.30 || factors.articleScore >= 0.25 || factors.mediaScore >= 0.50) {
+        semanticPairDiagnostics.push({
+          a: a.keyword,
+          b: b.keyword,
+          categoryMatch: a.category === b.category,
+          keywordScore: Number(factors.keywordScore.toFixed(3)),
+          relatedKeywordScore: Number(factors.relatedKeywordScore.toFixed(3)),
+          articleScore: Number(factors.articleScore.toFixed(3)),
+          mediaScore: Number(factors.mediaScore.toFixed(3)),
+          categoryScore: factors.categoryScore,
+          total: Number(factors.total.toFixed(3)),
+          threshold,
+          linked,
+        });
+      }
+
+      if (linked) {
         adjacency.get(a.id)?.add(b.id);
         adjacency.get(b.id)?.add(a.id);
       }
@@ -578,6 +638,51 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
     });
   }
 
+  // Send semantic-clustering diagnostics to the server so the actual
+  // five-factor evidence and representative-star decision are visible in Vercel.
+  const semanticClusterDiagnostics = clusters.map(cluster => {
+    const members = cluster.trendIds
+      .map(id => laidOut.find(t => t.id === id))
+      .filter(Boolean) as Trend[];
+
+    const representativeCandidates = members.map(member => {
+      const centrality = members
+        .filter(other => other.id !== member.id)
+        .reduce((sum, other) => sum + semanticTrendSimilarity(member, other), 0) / Math.max(1, members.length - 1);
+      const coverage = clamp((member.relatedArticles.length + member.relatedMediaCount) / 16);
+      const score =
+        member.trendReach * 0.42 +
+        member.trendMomentum * 0.24 +
+        centrality * 0.22 +
+        coverage * 0.12;
+      return {
+        keyword: member.keyword,
+        score: Number(score.toFixed(3)),
+        reach: Number(member.trendReach.toFixed(3)),
+        momentum: Number(member.trendMomentum.toFixed(3)),
+        centrality: Number(centrality.toFixed(3)),
+        coverage: Number(coverage.toFixed(3)),
+        category: member.category,
+      };
+    }).sort((a, b) => b.score - a.score);
+
+    return {
+      id: cluster.id,
+      representativeKeyword: cluster.representativeKeyword,
+      memberCount: members.length,
+      members: members.map(m => m.keyword),
+      relatedness: Number(cluster.relatedness.toFixed(3)),
+      clusterReach: Number(cluster.clusterReach.toFixed(3)),
+      clusterMomentum: Number(cluster.clusterMomentum.toFixed(3)),
+      relatedMediaCount: cluster.relatedMediaCount,
+      representativeCandidates,
+      pairEvidence: semanticPairDiagnostics.filter(pair =>
+        members.some(m => m.keyword === pair.a) &&
+        members.some(m => m.keyword === pair.b)
+      ),
+    };
+  });
+
   // Send the complete layout diagnostics to the server so they appear in Vercel logs.
   // This is intentionally separate from the normal timeline API summary log.
   const positionDiagnostics = laidOut.map(t => {
@@ -634,6 +739,8 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
           trendCount: c.trendIds.length,
           trendIds: c.trendIds,
         })),
+        semanticClusters: semanticClusterDiagnostics,
+        semanticPairs: semanticPairDiagnostics,
         stars: positionDiagnostics,
       },
     }),
@@ -813,6 +920,14 @@ export default function Home() {
     : [];
 
   const openCluster = (cluster: Cluster) => {
+    const members = displayedTrends.filter(t => cluster.trendIds.includes(t.id));
+    console.info("[TREND_CLUSTER] expand_request", {
+      clusterId: cluster.id,
+      representativeKeyword: cluster.representativeKeyword,
+      memberCount: cluster.trendIds.length,
+      visibleMemberCount: members.length,
+      members: members.map(t => t.keyword),
+    });
     setSelectedCluster(cluster);
     setSelectedTrend(null);
     setViewMode("cluster");
@@ -938,6 +1053,8 @@ export default function Home() {
               key={c.id}
               className="cluster"
               style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%`, ["--cc" as any]: CATEGORY_COLORS[c.category] || CATEGORY_COLORS.other, ["--cs" as any]: `${Math.min(180, c.size)}px` }}
+              onPointerDown={e => e.stopPropagation()}
+              onPointerUp={e => e.stopPropagation()}
               onClick={e => { e.stopPropagation(); openCluster(c); }}
               aria-label="トレンド星団"
             >
@@ -947,7 +1064,7 @@ export default function Home() {
           ))}
 
           {selectedCluster && viewMode === "cluster" && (() => {
-            const members = displayedTrends.filter(t => selectedCluster.trendIds.includes(t.id));
+            const members = (visibleUniverse?.trends || []).filter(t => selectedCluster.trendIds.includes(t.id));
             const bursts = Array.from({ length: Math.min(18, Math.max(8, members.length * 3)) });
             return (
               <div
