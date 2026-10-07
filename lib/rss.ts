@@ -236,7 +236,7 @@ async function fetchFeed(config:FeedConfig){
     // fetch()ではDNS/TCP/TLSを個別には取得できないため、
     // responseHeadersMsに「DNS + TCP + TLS + 配信元サーバーの応答待ち」をまとめて記録する。
     const networkStarted=Date.now();
-    const r=await fetch(config.url,{next:{revalidate:60},signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1","Accept":"application/rss+xml, application/xml, text/xml, */*","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"}});
+    const r=await fetch(config.url,{cache:"no-store",signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1","Accept":"application/rss+xml, application/xml, text/xml, */*","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"}});
     const responseHeadersMs=Date.now()-networkStarted;
     const contentType=r.headers.get("content-type")||"";
 
@@ -277,7 +277,7 @@ export async function fetchGoogleTrendTerms(){
   const timer=setTimeout(()=>controller.abort(),5000);
   try{
     const started=Date.now();
-    const r=await fetch(url,{next:{revalidate:300},signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0","Accept":"application/rss+xml,application/xml,text/xml,*/*","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"}});
+    const r=await fetch(url,{cache:"no-store",signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0","Accept":"application/rss+xml,application/xml,text/xml,*/*","Accept-Language":"ja-JP,ja;q=0.9,en;q=0.8"}});
     const xml=await r.text();
     if(!r.ok)throw new Error("HTTP "+r.status);
     const doc=new JSDOM(xml).window.document;
