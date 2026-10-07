@@ -207,53 +207,87 @@ function classifyCategory(text: string) {
   return "other";
 }
 
-function semanticNatureScore(text: string, category = "other") {
+function semanticNatureScore(text: string, category = "other", articles: Article[] = []) {
   const eventTerms = [
-    "発表","発表会","決定","成立","開始","発生","事故","地震","台風","大雨","洪水",
-    "津波","火山","会見","発売","合意","選挙","判決","逮捕","攻撃","災害","開幕",
-    "優勝","契約","就任","辞任","死亡","負傷","発見","公開","導入","買収","提携",
-    "決算","上場","値上がり","値下がり","政府","首相","国会","法案","地震","台風"
+    "発表","発表会","発足","決定","成立","開始","再開","発生","事故","事件","地震","台風","大雨","洪水",
+    "津波","火山","噴火","警報","避難","会見","発売","合意","選挙","判決","逮捕","起訴","攻撃","災害",
+    "開幕","優勝","敗退","契約","就任","辞任","死亡","死去","負傷","発見","公開","導入","買収","提携",
+    "決算","上場","値上がり","値下がり","政府","首相","国会","法案","成立","可決","承認","調査開始",
+    "サービス開始","新サービス","新製品","発売開始","決定しました","発表しました"
   ];
   const reactionTerms = [
-    "炎上","批判","反応","話題","バズ","意見","賛否","トレンド","人気","拡散","SNS",
-    "コメント","議論","口コミ","感想","騒然","歓喜","困惑","絶賛","不満","物議",
-    "大炎上","論争","ミーム","ネタ","推し","ランキング","急上昇"
+    "炎上","批判","反応","話題","バズ","意見","賛否","トレンド","人気","拡散","SNS","コメント",
+    "議論","口コミ","感想","騒然","歓喜","困惑","絶賛","不満","物議","大炎上","論争","ミーム",
+    "ネタ","推し","ランキング","急上昇","共感","反響","声","話題に","注目集める","注目を集める",
+    "盛り上がり","ファン","ネット上","SNS上","ネットで"
   ];
 
-  const countHits = (terms: string[]) =>
-    terms.reduce((sum, term) => sum + (text.includes(term) ? 1 : 0), 0);
+  const countHits = (value: string, terms: string[]) =>
+    terms.reduce((sum, term) => sum + (value.includes(term) ? 1 : 0), 0);
 
-  const eventHits = countHits(eventTerms);
-  const reactionHits = countHits(reactionTerms);
+  const scoreText = (value: string) => ({
+    event: countHits(value, eventTerms),
+    reaction: countHits(value, reactionTerms),
+  });
 
-  // A weak category prior only fills gaps when lexical evidence is sparse.
+  const keywordEvidence = scoreText(text);
+  let eventEvidence = keywordEvidence.event;
+  let reactionEvidence = keywordEvidence.reaction;
+
+  // Article context is the strongest signal. Titles carry more weight than
+  // summaries because headlines describe what happened or how people reacted.
+  let articleEventEvidence = 0;
+  let articleReactionEvidence = 0;
+  for (const article of articles) {
+    const title = String(article.title || "");
+    const summary = String(article.summary || "");
+    const categoryText = String(article.category || "");
+
+    const titleScore = scoreText(title);
+    const summaryScore = scoreText(summary);
+    const categoryScore = scoreText(categoryText);
+
+    articleEventEvidence += titleScore.event * 2.6 + summaryScore.event * 1.15 + categoryScore.event * 0.35;
+    articleReactionEvidence += titleScore.reaction * 2.6 + summaryScore.reaction * 1.15 + categoryScore.reaction * 0.35;
+  }
+
+  eventEvidence += articleEventEvidence;
+  reactionEvidence += articleReactionEvidence;
+
   const eventPrior: Record<string, number> = {
-    politics: 0.82,
-    economy: 0.70,
-    market: 0.68,
-    international: 0.76,
-    disaster: 0.92,
-    science: 0.82,
-    technology: 0.64,
-    society: 0.62,
+    politics: 0.78,
+    economy: 0.68,
+    market: 0.66,
+    international: 0.72,
+    disaster: 0.91,
+    science: 0.76,
+    technology: 0.61,
+    society: 0.64,
     sports: 0.55,
-    entertainment: 0.42,
-    life: 0.50,
-    other: 0.50,
+    entertainment: 0.40,
+    life: 0.46,
+    other: 0.44,
   };
 
-  const prior = eventPrior[category] ?? 0.5;
-  const lexicalTotal = eventHits + reactionHits;
-  if (lexicalTotal === 0) return prior;
+  const prior = eventPrior[category] ?? 0.44;
+  const totalEvidence = eventEvidence + reactionEvidence;
+  const articleEvidence = articleEventEvidence + articleReactionEvidence;
 
-  const lexicalEvent = clamp(
-    0.5 + (eventHits - reactionHits) / Math.max(2, lexicalTotal) * 0.5
-  );
+  // Do not collapse unknown topics to 0.5. Even when lexical evidence is
+  // sparse, the category gives a weak directional prior.
+  if (totalEvidence <= 0.01) {
+    return clamp(0.5 + (prior - 0.5) * 0.72);
+  }
 
-  // Article context is intentionally dominant; category is only a weak prior.
-  return clamp(lexicalEvent * 0.84 + prior * 0.16);
+  const balance = (eventEvidence - reactionEvidence) / Math.max(1, totalEvidence);
+  const confidence = clamp(totalEvidence / 18);
+  const lexicalScore = 0.5 + balance * (0.43 + confidence * 0.05);
+
+  // When article evidence exists, let it dominate the category prior.
+  // Without article evidence, keep a modest category correction.
+  const priorWeight = articleEvidence > 0 ? 0.07 : 0.22;
+  return clamp(lexicalScore * (1 - priorWeight) + prior * priorWeight);
 }
-
 function buildSemanticCoordinates(args: {
   keyword: string;
   relatedKeywords: string[];
@@ -292,13 +326,19 @@ function buildSemanticCoordinates(args: {
 
   // Interest breadth is deliberately not trendReach. It describes how far
   // interest spreads across audiences/sources/media, not how large the star is.
+  const interestBreadthBase =
+    sourceBreadth * 0.27 +
+    rankBreadth * 0.19 +
+    mediaBreadth * 0.23 +
+    articleBreadth * 0.12 +
+    searchBreadth * 0.12 +
+    relatedBreadth * 0.07;
+
+  // Stretch the semantic X dimension around its midpoint. This keeps the
+  // meaning of the score intact while preventing most stars from collapsing
+  // into the left half of the universe.
   const interestBreadthScore = clamp(
-    sourceBreadth * 0.24 +
-    rankBreadth * 0.18 +
-    mediaBreadth * 0.22 +
-    articleBreadth * 0.14 +
-    searchBreadth * 0.14 +
-    relatedBreadth * 0.08
+    0.5 + (interestBreadthBase - 0.5) * 1.55
   );
 
   const semanticText = [
@@ -309,7 +349,7 @@ function buildSemanticCoordinates(args: {
     ...relatedArticles.map(a => a.category || ""),
   ].join(" ");
 
-  const eventReactionScore = semanticNatureScore(semanticText, category);
+  const eventReactionScore = semanticNatureScore(semanticText, category, relatedArticles);
 
   return {
     interestBreadthScore,
@@ -323,8 +363,18 @@ function buildSemanticCoordinates(args: {
       articleBreadth,
       searchBreadth,
       relatedBreadth,
-      eventHits: Number((semanticText.match(/発表|決定|成立|開始|発生|事故|地震|台風|大雨|洪水|津波|火山|会見|発売|合意|選挙|判決|逮捕|攻撃|災害|開幕|優勝|契約|就任|辞任|死亡|負傷|発見|公開|導入|買収|提携|決算|上場|値上がり|値下がり/g) || []).length),
-      reactionHits: Number((semanticText.match(/炎上|批判|反応|話題|バズ|意見|賛否|トレンド|人気|拡散|SNS|コメント|議論|口コミ|感想|騒然|歓喜|困惑|絶賛|不満|物議|大炎上|論争|ミーム|ネタ|推し|ランキング|急上昇/g) || []).length),
+      eventHits: Number((semanticText.match(/発表|決定|成立|開始|発生|事故|事件|地震|台風|大雨|洪水|津波|火山|噴火|警報|避難|会見|発売|合意|選挙|判決|逮捕|起訴|攻撃|災害|開幕|優勝|敗退|契約|就任|辞任|死亡|死去|負傷|発見|公開|導入|買収|提携|決算|上場|値上がり|値下がり|政府|首相|国会|法案|可決|承認|調査開始|サービス開始|新サービス|新製品/g) || []).length),
+      reactionHits: Number((semanticText.match(/炎上|批判|反応|話題|バズ|意見|賛否|トレンド|人気|拡散|SNS|コメント|議論|口コミ|感想|騒然|歓喜|困惑|絶賛|不満|物議|大炎上|論争|ミーム|ネタ|推し|ランキング|急上昇|共感|反響|声|盛り上がり|ファン|ネット上|SNS上/g) || []).length),
+      articleEventEvidence: Number(relatedArticles.reduce((sum, article) => {
+        const title = String(article.title || "");
+        const summary = String(article.summary || "");
+        return sum + (title.match(/発表|決定|成立|開始|発生|事故|事件|地震|台風|大雨|洪水|津波|火山|噴火|警報|避難|会見|発売|合意|選挙|判決|逮捕|起訴|攻撃|災害|開幕|優勝|敗退|契約|就任|辞任|死亡|死去|負傷|発見|公開|導入|買収|提携|決算|上場|政府|首相|国会|法案|可決|承認|新サービス|新製品/g) || []).length * 2.6 + (summary.match(/発表|決定|成立|開始|発生|事故|事件|地震|台風|大雨|洪水|津波|火山|噴火|警報|避難|会見|発売|合意|選挙|判決|逮捕|起訴|攻撃|災害|開幕|優勝|敗退|契約|就任|辞任|死亡|死去|負傷|発見|公開|導入|買収|提携|決算|上場|政府|首相|国会|法案|可決|承認|新サービス|新製品/g) || []).length * 1.15);
+      }, 0).toFixed(2)),
+      articleReactionEvidence: Number(relatedArticles.reduce((sum, article) => {
+        const title = String(article.title || "");
+        const summary = String(article.summary || "");
+        return sum + (title.match(/炎上|批判|反応|話題|バズ|意見|賛否|トレンド|人気|拡散|SNS|コメント|議論|口コミ|感想|騒然|歓喜|困惑|絶賛|不満|物議|大炎上|論争|ミーム|ネタ|推し|ランキング|急上昇|共感|反響|声|盛り上がり|ファン|ネット上|SNS上/g) || []).length * 2.6 + (summary.match(/炎上|批判|反応|話題|バズ|意見|賛否|トレンド|人気|拡散|SNS|コメント|議論|口コミ|感想|騒然|歓喜|困惑|絶賛|不満|物議|大炎上|論争|ミーム|ネタ|推し|ランキング|急上昇|共感|反響|声|盛り上がり|ファン|ネット上|SNS上/g) || []).length * 1.15);
+      }, 0).toFixed(2)),
     },
   };
 }
@@ -817,7 +867,7 @@ function buildUniverse(payload: any, now = new Date().toISOString()): Universe {
     body: JSON.stringify({
       type: "trend_position_diagnostics",
       payload: {
-        version: "semantic-coordinate-v1",
+        version: "semantic-coordinate-v2-context-breadth",
         bounds: { xMin: 0.16, xMax: 0.84, yMin: 0.16, yMax: 0.84 },
         count: laidOut.length,
         xRange: xValues.length ? [Number(Math.min(...xValues).toFixed(4)), Number(Math.max(...xValues).toFixed(4))] : [],
